@@ -13,14 +13,35 @@ struct Ray {
     vec3 origin, direction;
 };
 
+struct Sphere {
+    vec3 center;
+    float radius;
+};
+
 // Get the point the ray is at at a specific time
 vec3 GetRayPointAt(Ray ray, float t)
 {   
     return ray.origin + ray.direction * t;
 }
 
+bool HitSphere(Sphere sphere, Ray ray)
+{
+    vec3 oc = ray.origin - sphere.center;
+    float a = dot(ray.direction, ray.direction);
+    float b = 2.0 * dot(oc, ray.direction);
+    float c = dot(oc, oc) - sphere.radius * sphere.radius;
+    float discriminant = b * b - 4 * a * c;
+    return discriminant > 0.0;
+}
+
+const Sphere sphere = Sphere(vec3(0, 0, 3), 1.0);
+
 vec3 ComputeRayColor(Ray ray)
 {
+    if(HitSphere(sphere, ray)) {
+        return vec3(1.0, 1.0, 1.0);
+    }
+
     float t = 0.5 * (normalize(ray.direction).y + 1.0);
     return (1.0 - t) * vec3(1.0, 1.0, 1.0) + t * vec3(0.5, 0.7, 1.0);
 }
