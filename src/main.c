@@ -82,6 +82,7 @@ int main(int argc, char** argv)
     GLuint screenTexture = createScreenTexture(windowWidth, windowHeight);
     struct buffers bufs = createBuffers();
 
+    glfwSwapInterval(1); // Enable vsync
     while(!glfwWindowShouldClose(window)) {
         {
             glUseProgram(computeprogram);

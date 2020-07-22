@@ -2,7 +2,6 @@
 
 #define WIDTH 800.0
 #define HEIGHT 600.0
-#define fov 90
 #define CAM_LOCATION vec3(0.0, 0.0, 0.0)
 #define FOCAL_LENGTH 1.0
 
@@ -12,6 +11,24 @@ layout(rgba32f, binding = 0) uniform image2D screen;
 struct Ray {
     vec3 origin, direction;
 };
+
+struct HitRecord {
+    vec3 p, normal;
+    float t;
+    bool frontFace;
+};
+
+struct HitResult {
+    bool isHit;
+    HitRecord rec;
+};
+
+HitRecord SetFaceNormal(HitRecord rec, Ray ray, vec3 outwardNormal)
+{
+    rec.frontFace = dot(ray.direction, outwardNormal) < 0.0;
+    rec.normal = rec.frontFace ? outwardNormal : -outwardNormal;
+    return rec;
+}
 
 struct Sphere {
     vec3 center;
@@ -24,22 +41,89 @@ vec3 GetRayPointAt(Ray ray, float t)
     return ray.origin + ray.direction * t;
 }
 
-bool HitSphere(Sphere sphere, Ray ray)
+float SquareLength(vec3 v)
 {
-    vec3 oc = ray.origin - sphere.center;
-    float a = dot(ray.direction, ray.direction);
-    float b = 2.0 * dot(oc, ray.direction);
-    float c = dot(oc, oc) - sphere.radius * sphere.radius;
-    float discriminant = b * b - 4 * a * c;
-    return discriminant > 0.0;
+    return v.x * v.x + v.y * v.y + v.z * v.z;
 }
 
-const Sphere sphere = Sphere(vec3(0, 0, 3), 1.0);
+// float HitSphere(Sphere sphere, Ray ray)
+// {
+//     vec3 oc = ray.origin - sphere.center;
+//     float a = dot(ray.direction, ray.direction);
+//     float b = 2.0 * dot(oc, ray.direction);
+//     float c = dot(oc, oc) - sphere.radius * sphere.radius;
+//     float discriminant = b * b - 4 * a * c;
+//     if(discriminant < 0.0) {
+//         return -1.0;
+//     } else {
+//         return (-b - sqrt(discriminant)) / (2.0 * a);
+//     }
+// }
+
+HitResult HitSphere(Sphere sphere, Ray ray, float tMin, float tMax)
+{
+    vec3 oc = ray.origin - sphere.center;
+    float a = SquareLength(ray.direction);
+    float halfB = dot(oc, ray.direction);
+    float c = SquareLength(oc) - sphere.radius * sphere.radius;
+    float disc = halfB * halfB - a * c;
+
+    HitRecord rec;
+    if(disc > 0.0) {
+        float root = sqrt(disc);
+
+        float temp = (-halfB - root) / a;
+        if(temp < tMax && temp > tMin) {
+            rec.t = temp;
+            rec.p = GetRayPointAt(ray, temp);
+            
+            vec3 outwardNormal = (rec.p + sphere.center) / sphere.radius;
+            rec = SetFaceNormal(rec, ray, outwardNormal);
+            
+            return HitResult(true, rec);
+        }
+
+        temp = (-halfB + root) / a;
+        if(temp < tMax && temp > tMin) {
+            rec.t = temp;
+            rec.p = GetRayPointAt(ray, temp);
+            
+            vec3 outwardNormal = (rec.p + sphere.center) / sphere.radius;
+            rec = SetFaceNormal(rec, ray, outwardNormal);
+
+            return HitResult(true, rec);
+        }
+    }
+
+    return HitResult(false, rec);
+}
+
+const Sphere world[] = Sphere[](
+    Sphere(vec3(0, -10, 0), 10.0),
+    Sphere(vec3(0, 0, -3), 1)
+);
 
 vec3 ComputeRayColor(Ray ray)
 {
-    if(HitSphere(sphere, ray)) {
-        return vec3(1.0, 1.0, 1.0);
+    // Iterator over all spheres
+
+    bool hasHit = false;
+    HitRecord bestHit;
+    for(int i = 0; i < 2; i++) {
+        HitResult res = HitSphere(world[i], ray, 0.0, 100.0);
+        if(res.isHit) {
+            if(!hasHit) {
+                bestHit = res.rec;
+            } else if(bestHit.t > res.rec.t) {
+                bestHit = res.rec;
+            }
+            hasHit = true;
+            // return 0.5 * (res.rec.normal + vec3(1, 1, 1));
+        }
+    }
+
+    if(hasHit) {
+        return 0.5 * (bestHit.normal + vec3(1, 1, 1));
     }
 
     float t = 0.5 * (normalize(ray.direction).y + 1.0);
