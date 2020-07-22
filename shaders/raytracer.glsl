@@ -99,7 +99,7 @@ HitResult HitSphere(Sphere sphere, Ray ray, float tMin, float tMax)
 }
 
 const Sphere world[] = Sphere[](
-    Sphere(vec3(0, -10, 0), 10.0),
+    Sphere(vec3(0, -11, 0), 10.0),
     Sphere(vec3(0, 0, -3), 1)
 );
 
@@ -107,22 +107,19 @@ vec3 ComputeRayColor(Ray ray)
 {
     // Iterator over all spheres
 
-    bool hasHit = false;
+    bool hitAnything = false;
+    float closest = 10000.0;
     HitRecord bestHit;
     for(int i = 0; i < 2; i++) {
-        HitResult res = HitSphere(world[i], ray, 0.0, 100.0);
+        HitResult res = HitSphere(world[i], ray, 0.0, closest);
         if(res.isHit) {
-            if(!hasHit) {
-                bestHit = res.rec;
-            } else if(bestHit.t > res.rec.t) {
-                bestHit = res.rec;
-            }
-            hasHit = true;
-            // return 0.5 * (res.rec.normal + vec3(1, 1, 1));
+            closest = res.rec.t;
+            bestHit = res.rec;
+            hitAnything = true;
         }
     }
 
-    if(hasHit) {
+    if(hitAnything) {
         return 0.5 * (bestHit.normal + vec3(1, 1, 1));
     }
 
