@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.1)
-project(gl_skeleton LANGUAGES C)
+project(rt LANGUAGES C)
 
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
@@ -10,8 +10,10 @@ add_executable(
 
     src/main.c
     src/window.c
+    src/shader.c
 
     include/window.h
+    include/shader.h
 )
 
 add_subdirectory(lib/glfw)
@@ -23,6 +25,3 @@ target_include_directories(${PROJECT_NAME} PRIVATE lib/glad/include)
 
 target_link_libraries(${PROJECT_NAME} glfw)
 target_link_libraries(${PROJECT_NAME} glad ${CMAKE_DL_LIBS})
-
-
-
