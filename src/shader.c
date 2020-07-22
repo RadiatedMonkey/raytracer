@@ -7,7 +7,7 @@
 inline char* fileRead(const char* path)
 {
     FILE* f;
-    errno_t err = fopen_s(&f, path, "r");
+    errno_t err = fopen_s(&f, path, "rb");
 
     if(!f) {
         fprintf(stderr, "Failed to read file %s: code %i\n", path, err);
@@ -25,7 +25,8 @@ inline char* fileRead(const char* path)
         return 0;
     }
 
-    fread_s(buffer, filesize, filesize, 1, f);
+    size_t read = fread(buffer, sizeof(char), filesize, f);
+    printf("%s %i %i\n", buffer, filesize, read);
     fclose(f);
 
     return buffer;

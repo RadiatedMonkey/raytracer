@@ -80,6 +80,20 @@ float SquareLength(vec3 v)
     return v.x * v.x + v.y * v.y + v.z * v.z;
 }
 
+vec3 RandomInUnitSphere()
+{
+    float val = utime;
+    while(true) {
+        vec3 p = vec3(
+            random(vec2(val++, gl_GlobalInvocationID.x)) * 2 - 1,
+            random(vec2(val++, gl_GlobalInvocationID.y)) * 2 - 1,
+            random(vec2(val++, gl_GlobalInvocationID.z)) * 2 - 1
+        );
+        if(SquareLength(p) >= 1) continue;
+        return p;
+    }
+}
+
 // float HitSphere(Sphere sphere, Ray ray)
 // {
 //     vec3 oc = ray.origin - sphere.center;
@@ -94,7 +108,7 @@ float SquareLength(vec3 v)
 //     }
 // }
 
-HitResult HitSphere(Sphere sphere, Ray ray, float tMin, float tMax)
+bool HitSphere(Sphere sphere, Ray ray, float tMin, float tMax, out HitRecord rec_out)
 {
     vec3 oc = ray.origin - sphere.center;
     float a = SquareLength(ray.direction);
@@ -113,8 +127,9 @@ HitResult HitSphere(Sphere sphere, Ray ray, float tMin, float tMax)
             
             vec3 outwardNormal = (rec.p + sphere.center) / sphere.radius;
             rec = SetFaceNormal(rec, ray, outwardNormal);
-            
-            return HitResult(true, rec);
+
+            rec_out = rec;
+            return true;
         }
 
         temp = (-halfB + root) / a;
@@ -125,40 +140,108 @@ HitResult HitSphere(Sphere sphere, Ray ray, float tMin, float tMax)
             vec3 outwardNormal = (rec.p + sphere.center) / sphere.radius;
             rec = SetFaceNormal(rec, ray, outwardNormal);
 
-            return HitResult(true, rec);
+            rec_out = rec;
+            return true;
         }
     }
 
-    return HitResult(false, rec);
+    return false;
 }
 
-vec3 ComputeRayColor(Ray ray)
+// HitResult ComputeRayColorInner(Ray ray)
+// {
+//     const Sphere world[] = Sphere[](
+//         Sphere(vec3(0, -11, 0), 10.0),
+//         Sphere(vec3(0, 0, -3), 1)
+//     );
+
+//     bool hitAnything = false;
+//     float closest = 10000.0;
+//     HitRecord bestHit;
+//     for(int i = 0; i < 2; i++) {
+//         HitResult res = HitSphere(world[i], ray, 0.0, closest);
+//         if(res.isHit) {
+//             closest = res.rec.t;
+//             bestHit = res.rec;
+//             hitAnything = true;
+//         }
+//     }
+//     if(hitAnything) {
+//         // return 0.5 * (bestHit.normal + vec3(1, 1, 1));
+//         vec3 target = bestHit.p + bestHit.normal + RandomInUnitSphere();
+//         return 0.5 * ComputeRayColorInner(Ray(bestHit.p, target - bestHit.p));
+//     }
+
+//     float t = 0.5 * (normalize(ray.direction).y + 1.0);
+//     return (1.0 - t) * vec3(1.0, 1.0, 1.0) + t * vec3(0.5, 0.7, 1.0);
+// }
+
+const Sphere world[] = Sphere[](
+    Sphere(vec3(0, -11, 0), 10.0),
+    Sphere(vec3(0, 0, -3), 1)
+);
+
+// vec3 ComputeRayColor(Ray ray, int bounceLimit)
+// {
+//     Sphere world[] = Sphere[](
+//         Sphere(vec3(0, -11, 0), 10.0),
+//         Sphere(vec3(0, 0, -3), 1)
+//     );
+
+//     // Iterator over all spheres
+
+//     bool hitAnything = false;
+//     float closest = 10000.0;
+//     HitRecord bestHit;
+//     for(int i = 0; i < 2; i++) {
+//         HitResult res = HitSphere(world[i], ray, 0.0, closest);
+//         if(res.isHit) {
+//             closest = res.rec.t;
+//             bestHit = res.rec;
+//             hitAnything = true;
+//         }
+//     }
+
+//     if(hitAnything) {
+//         return 0.5 * (bestHit.normal + vec3(1, 1, 1));
+//     }
+
+//     float t = 0.5 * (normalize(ray.direction).y + 1.0);
+//     return (1.0 - t) * vec3(1.0, 1.0, 1.0) + t * vec3(0.5, 0.7, 1.0);
+// }
+
+bool ComputeRayHit(Ray ray, out HitRecord rec_out)
 {
-    Sphere world[] = Sphere[](
-        Sphere(vec3(0, -11, 0), 10.0),
-        Sphere(vec3(0, 0, -3), 1)
-    );
-
-    // Iterator over all spheres
-
     bool hitAnything = false;
-    float closest = 10000.0;
-    HitRecord bestHit;
+    float closest = 1000.0;
+
+    HitRecord rec;
     for(int i = 0; i < 2; i++) {
-        HitResult res = HitSphere(world[i], ray, 0.0, closest);
-        if(res.isHit) {
-            closest = res.rec.t;
-            bestHit = res.rec;
+        if(HitSphere(world[i], ray, 0.0, closest, rec)) {
+            closest = rec.t;
             hitAnything = true;
         }
     }
 
     if(hitAnything) {
-        return 0.5 * (bestHit.normal + vec3(1, 1, 1));
+        rec_out = rec;
     }
 
-    float t = 0.5 * (normalize(ray.direction).y + 1.0);
-    return (1.0 - t) * vec3(1.0, 1.0, 1.0) + t * vec3(0.5, 0.7, 1.0);
+    return hitAnything;
+}
+
+vec3 Radiance(Ray input_ray, int bounceLimit) {
+    vec3 final = vec3(0, 0, 0);
+
+    HitRecord rec;
+    Ray ray = input_ray;
+    for(int i = 0; i < bounceLimit; i++) {
+        if(ComputeRayHit(ray, rec)) {
+            final = vec3(1, 1, 1);
+        }
+    }
+
+    return final;
 }
 
 vec3 TransformColor(vec3 pxin, int samples)
@@ -187,16 +270,16 @@ void main()
     vec3 vertical = vec3(0.0, float(viewportHeight), 0.0);
     vec3 lowerLeftCorner = CAM_LOCATION - horizontal /  2 - vertical / 2 - vec3(0, 0, FOCAL_LENGTH);
 
-    const int SAMPLES = 15;
+    const int SAMPLES = 1;
 
     vec3 pixel = vec3(0, 0, 0);
     for(int i = 0; i < SAMPLES; i++) {
-        float u = (coords.x + random(gl_GlobalInvocationID.x) / 4) / (WIDTH - 1);
-        float v = (coords.y + random(gl_GlobalInvocationID.y) / 4) / (HEIGHT - 1);
+        float u = (coords.x + random(vec2(utime, gl_GlobalInvocationID.x)) / 4) / (WIDTH - 1);
+        float v = (coords.y + random(vec2(utime, gl_GlobalInvocationID.y)) / 4) / (HEIGHT - 1);
 
         Ray ray = Ray(CAM_LOCATION, lowerLeftCorner + u * horizontal + v * vertical - CAM_LOCATION);
 
-        pixel += ComputeRayColor(ray);
+        pixel += Radiance(ray, 1);
     }
 
     pixel = TransformColor(pixel, SAMPLES);
