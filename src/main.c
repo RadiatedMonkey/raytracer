@@ -77,7 +77,7 @@ int main(int argc, char** argv)
     int windowWidth, windowHeight;
     glfwGetWindowSize(window, &windowWidth, &windowHeight);
 
-    glUseProgram(quadprogram);
+    GLint timeloc = glGetUniformLocation(computeprogram, "utime");
 
     GLuint screenTexture = createScreenTexture(windowWidth, windowHeight);
     struct buffers bufs = createBuffers();
@@ -86,12 +86,13 @@ int main(int argc, char** argv)
     while(!glfwWindowShouldClose(window)) {
         {
             glUseProgram(computeprogram);
+            glUniform1f(timeloc, (float)glfwGetTime());
             glDispatchCompute((GLuint)windowWidth, (GLuint)windowHeight, 1);
         }
 
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
-        {
+        {  
             glClear(GL_COLOR_BUFFER_BIT);
             glUseProgram(quadprogram);
             glBindVertexArray(bufs.vao);
