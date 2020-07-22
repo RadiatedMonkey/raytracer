@@ -191,8 +191,8 @@ void main()
 
     vec3 pixel = vec3(0, 0, 0);
     for(int i = 0; i < SAMPLES; i++) {
-        float u = (coords.x + random(gl_GlobalInvocationID.x) / 2) / (WIDTH - 1);
-        float v = (coords.y + random(gl_GlobalInvocationID.y) / 2) / (HEIGHT - 1);
+        float u = (coords.x + random(gl_GlobalInvocationID.x) / 4) / (WIDTH - 1);
+        float v = (coords.y + random(gl_GlobalInvocationID.y) / 4) / (HEIGHT - 1);
 
         Ray ray = Ray(CAM_LOCATION, lowerLeftCorner + u * horizontal + v * vertical - CAM_LOCATION);
 
