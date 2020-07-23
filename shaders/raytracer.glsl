@@ -1,146 +1,107 @@
 #version 430 core
 
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(rgba32f, binding = 0) uniform image2D framebuffer;
+
+#define FOV 90.0
 #define WIDTH 800.0
 #define HEIGHT 600.0
-#define CAM_LOCATION vec3(0.0, 0.0, sin(utime))
-#define FOCAL_LENGTH 1.0
-
-layout(local_size_x = 1, local_size_y = 1) in;
-layout(rgba32f, binding = 0) uniform image2D screen;
+#define SAMPLES 10
+#define DEPTH 2
 
 uniform float utime;
 
-uint hash( uint x ) {
-    x += ( x << 10u );
-    x ^= ( x >>  6u );
-    x += ( x <<  3u );
-    x ^= ( x >> 11u );
-    x += ( x << 15u );
-    return x;
-}
-
-uint hash( uvec2 v ) { return hash( v.x ^ hash(v.y)                         ); }
-uint hash( uvec3 v ) { return hash( v.x ^ hash(v.y) ^ hash(v.z)             ); }
-uint hash( uvec4 v ) { return hash( v.x ^ hash(v.y) ^ hash(v.z) ^ hash(v.w) ); }
-
-// Construct a float with half-open range [0:1] using low 23 bits.
-// All zeroes yields 0.0, all ones yields the next smallest representable value below 1.0.
-float floatConstruct( uint m ) {
-    const uint ieeeMantissa = 0x007FFFFFu; // binary32 mantissa bitmask
-    const uint ieeeOne      = 0x3F800000u; // 1.0 in IEEE binary32
-
-    m &= ieeeMantissa;                     // Keep only mantissa bits (fractional part)
-    m |= ieeeOne;                          // Add fractional part to 1.0
-
-    float  f = uintBitsToFloat( m );       // Range [1:2]
-    return f - 1.0;                        // Range [0:1]
-}
-
-// Pseudo-random value in half-open range [0:1].
-float random( float x ) { return floatConstruct(hash(floatBitsToUint(x))); }
-float random( vec2  v ) { return floatConstruct(hash(floatBitsToUint(v))); }
-float random( vec3  v ) { return floatConstruct(hash(floatBitsToUint(v))); }
-float random( vec4  v ) { return floatConstruct(hash(floatBitsToUint(v))); }
-
 struct Ray {
-    vec3 origin, direction;
+    vec3 o, d; // Origin, direction
 };
 
 struct HitRecord {
-    vec3 p, normal;
+    vec3 p, n; // Point, normal, time, front face
     float t;
-    bool frontFace;
+    bool f;
 };
 
-struct HitResult {
-    bool isHit;
-    HitRecord rec;
-};
-
-HitRecord SetFaceNormal(HitRecord rec, Ray ray, vec3 outwardNormal)
+HitRecord SetFaceNormal(HitRecord rc, Ray r, vec3 n)
 {
-    rec.frontFace = dot(ray.direction, outwardNormal) < 0.0;
-    rec.normal = rec.frontFace ? outwardNormal : -outwardNormal;
-    return rec;
+    rc.f = dot(r.d, n) < 0;
+    rc.n = rc.f ? n : - n;
+    return rc;
 }
 
 struct Sphere {
-    vec3 center;
-    float radius;
+    vec3 c; // Center, radius
+    float r;
 };
 
-// Get the point the ray is at at a specific time
-vec3 GetRayPointAt(Ray ray, float t)
-{   
-    return ray.origin + ray.direction * t;
-}
-
-float SquareLength(vec3 v)
+float LengthSquared(vec3 v)
 {
     return v.x * v.x + v.y * v.y + v.z * v.z;
 }
 
-vec3 RandomInUnitSphere()
+vec3 RayPointAt(Ray r, float t)
 {
-    float val = utime;
-    while(true) {
-        vec3 p = vec3(
-            random(vec2(val++, gl_GlobalInvocationID.x)) * 2 - 1,
-            random(vec2(val++, gl_GlobalInvocationID.y)) * 2 - 1,
-            random(vec2(val++, gl_GlobalInvocationID.z)) * 2 - 1
-        );
-        if(SquareLength(p) >= 1) continue;
-        return p;
-    }
+    return r.o + r.d * t;
 }
 
-// float HitSphere(Sphere sphere, Ray ray)
-// {
-//     vec3 oc = ray.origin - sphere.center;
-//     float a = dot(ray.direction, ray.direction);
-//     float b = 2.0 * dot(oc, ray.direction);
-//     float c = dot(oc, oc) - sphere.radius * sphere.radius;
-//     float discriminant = b * b - 4 * a * c;
-//     if(discriminant < 0.0) {
-//         return -1.0;
-//     } else {
-//         return (-b - sqrt(discriminant)) / (2.0 * a);
-//     }
-// }
+uint base_hash(uvec2 p) {
+    p = 1103515245U * ((p >> 1U) ^ (p.yx));
+    uint h32 = 1103515245U * ((p.x) ^ (p.y >> 3U));
+    return h32 ^ (h32 >> 16);
+}
 
-bool HitSphere(Sphere sphere, Ray ray, float tMin, float tMax, out HitRecord rec_out)
+float g_seed = 0;
+
+float hash1(inout float seed)
 {
-    vec3 oc = ray.origin - sphere.center;
-    float a = SquareLength(ray.direction);
-    float halfB = dot(oc, ray.direction);
-    float c = SquareLength(oc) - sphere.radius * sphere.radius;
-    float disc = halfB * halfB - a * c;
+    uint n = base_hash(floatBitsToUint(vec2(seed += 0.1,seed += 0.1)));
+    return float(n)/float(0xffffffffU);
+}
 
-    HitRecord rec;
-    if(disc > 0.0) {
-        float root = sqrt(disc);
+vec3 hash3(inout float seed)
+{
+    uint n = base_hash(floatBitsToUint(vec2(seed += 0.1, seed += 0.1)));
+    uvec3 rz = uvec3(n, n * 16807U, n * 48271U);
+    return vec3(rz & uvec3(0x7fffffffU)) / float(0x7fffffff);
+}
 
-        float temp = (-halfB - root) / a;
-        if(temp < tMax && temp > tMin) {
-            rec.t = temp;
-            rec.p = GetRayPointAt(ray, temp);
+vec3 RandomInUnitSphere(inout float seed)
+{
+    vec3 h = hash3(seed) * vec3(2.0, 6.28318530718, 1.0);
+    float phi = h.y;
+    float r = pow(h.z, 1.0 / 3.0);
+    return r * vec3(sqrt(1.0 - h.x * h.x) * vec2(sin(phi), cos(phi)), h.x);
+}
+
+bool SphereHit(Sphere s, Ray r, out HitRecord rec, float tMin, float tMax)
+{
+    vec3 oc = r.o - s.c;
+    float a = LengthSquared(r.d);
+    float half_b = dot(oc, r.d);
+    float c = LengthSquared(oc) - s.r * s.r;
+    float d = half_b * half_b - a * c;
+
+    if(d > 0.0) {
+        float root = sqrt(d);
+        float tmp = (-half_b - root) / a;
+
+        if(tmp < tMax && tmp > tMin) {
+            rec.t = tmp;
+            rec.p = RayPointAt(r, tmp);
             
-            vec3 outwardNormal = (rec.p + sphere.center) / sphere.radius;
-            rec = SetFaceNormal(rec, ray, outwardNormal);
+            vec3 n = (rec.p - s.c) / s.r;
+            rec = SetFaceNormal(rec, r, n);
 
-            rec_out = rec;
             return true;
         }
 
-        temp = (-halfB + root) / a;
-        if(temp < tMax && temp > tMin) {
-            rec.t = temp;
-            rec.p = GetRayPointAt(ray, temp);
+        tmp = (-half_b + root) / a;
+        if(tmp < tMax && tmp > tMin) {
+            rec.t = tmp;
+            rec.p = RayPointAt(r, tmp);
             
-            vec3 outwardNormal = (rec.p + sphere.center) / sphere.radius;
-            rec = SetFaceNormal(rec, ray, outwardNormal);
+            vec3 n = (rec.p - s.c) / s.r;
+            rec = SetFaceNormal(rec, r, n);
 
-            rec_out = rec;
             return true;
         }
     }
@@ -148,141 +109,164 @@ bool HitSphere(Sphere sphere, Ray ray, float tMin, float tMax, out HitRecord rec
     return false;
 }
 
-// HitResult ComputeRayColorInner(Ray ray)
-// {
-//     const Sphere world[] = Sphere[](
-//         Sphere(vec3(0, -11, 0), 10.0),
-//         Sphere(vec3(0, 0, -3), 1)
-//     );
-
-//     bool hitAnything = false;
-//     float closest = 10000.0;
-//     HitRecord bestHit;
-//     for(int i = 0; i < 2; i++) {
-//         HitResult res = HitSphere(world[i], ray, 0.0, closest);
-//         if(res.isHit) {
-//             closest = res.rec.t;
-//             bestHit = res.rec;
-//             hitAnything = true;
-//         }
-//     }
-//     if(hitAnything) {
-//         // return 0.5 * (bestHit.normal + vec3(1, 1, 1));
-//         vec3 target = bestHit.p + bestHit.normal + RandomInUnitSphere();
-//         return 0.5 * ComputeRayColorInner(Ray(bestHit.p, target - bestHit.p));
-//     }
-
-//     float t = 0.5 * (normalize(ray.direction).y + 1.0);
-//     return (1.0 - t) * vec3(1.0, 1.0, 1.0) + t * vec3(0.5, 0.7, 1.0);
-// }
-
-const Sphere world[] = Sphere[](
-    Sphere(vec3(0, -11, 0), 10.0),
-    Sphere(vec3(0, 0, -3), 1)
-);
-
-// vec3 ComputeRayColor(Ray ray, int bounceLimit)
-// {
-//     Sphere world[] = Sphere[](
-//         Sphere(vec3(0, -11, 0), 10.0),
-//         Sphere(vec3(0, 0, -3), 1)
-//     );
-
-//     // Iterator over all spheres
-
-//     bool hitAnything = false;
-//     float closest = 10000.0;
-//     HitRecord bestHit;
-//     for(int i = 0; i < 2; i++) {
-//         HitResult res = HitSphere(world[i], ray, 0.0, closest);
-//         if(res.isHit) {
-//             closest = res.rec.t;
-//             bestHit = res.rec;
-//             hitAnything = true;
-//         }
-//     }
-
-//     if(hitAnything) {
-//         return 0.5 * (bestHit.normal + vec3(1, 1, 1));
-//     }
-
-//     float t = 0.5 * (normalize(ray.direction).y + 1.0);
-//     return (1.0 - t) * vec3(1.0, 1.0, 1.0) + t * vec3(0.5, 0.7, 1.0);
-// }
-
-bool ComputeRayHit(Ray ray, out HitRecord rec_out)
+vec2 ScaleCoordinates(vec2 c)
 {
-    bool hitAnything = false;
-    float closest = 1000.0;
-
-    HitRecord rec;
-    for(int i = 0; i < 2; i++) {
-        if(HitSphere(world[i], ray, 0.0, closest, rec)) {
-            closest = rec.t;
-            hitAnything = true;
-        }
-    }
-
-    if(hitAnything) {
-        rec_out = rec;
-    }
-
-    return hitAnything;
+    float u = (WIDTH / HEIGHT) * (2 * c.x / WIDTH - 1);
+    float v = (2 * c.y / HEIGHT - 1);
+    return vec2(u, v);
 }
 
-vec3 Radiance(Ray input_ray, int bounceLimit) {
-    vec3 final = vec3(0, 0, 0);
+Ray GetRay(vec2 uv)
+{
+    float fovFactor = 1.0 / tan(FOV / 2.0);
 
-    HitRecord rec;
-    Ray ray = input_ray;
-    for(int i = 0; i < bounceLimit; i++) {
-        if(ComputeRayHit(ray, rec)) {
-            final = vec3(1, 1, 1);
+    vec3 origin = vec3(0, 0, 0);
+    vec3 direction = vec3(uv.x, uv.y, fovFactor);
+
+    return Ray(origin, direction);
+}
+
+// Sphere sphere = Sphere(vec3(0, 0, sin(utime) + 3), 1.0);
+
+// vec3 RayColor(Ray ray, int bounces)
+// {
+//     vec3 col = vec3(1, 1, 1);
+
+//     HitRecord r;
+//     for(int i = 1; i < bounces + 1; i++) {
+//         if(SphereHit(sphere, ray, r, 0.0, 100.0)) {
+//             if(i == bounces) {
+//                 col *= vec3(0, 0, 0);
+//             } else {
+//                 col *= 
+//             }
+//         } else {
+//             float t = 0.5 * (normalize(ray.d).y + 1.0);
+//             col *= i * ((1.0 - t) * vec3(1, 1, 1) + t * vec3(0.5, 0.7, 1));
+//             break;
+//         }
+//     }
+
+//     // Sky color
+//     return col;
+// }
+
+const Sphere spheres[] = Sphere[](
+    Sphere(vec3(0, 0, -20), 1),
+    Sphere(vec3(0, -1001, 0), 1000.0),
+    Sphere(vec3(0, 1, -10), 0.5),
+    Sphere(vec3(2, 0, -21), 1),
+    Sphere(vec3(3, 1, -20), 1),
+    Sphere(vec3(-1, -1, -20), 1),
+    Sphere(vec3(2, 1, -20), 1)
+);
+
+vec3 RayColor(Ray ray_input, int depth)
+{
+    // Ray ray = ray_input;
+    // vec3 final = vec3(1, 1, 1);
+
+    // HitRecord record;
+    // for(int i = 0; i < depth; i++) {
+    //     bool hasHitAnything = false;
+    //     float closest = 1000.0;
+    //     for(int i = 0; i < 7; i++) {
+    //         if(SphereHit(spheres[i], ray, record, 0.001, closest)) {
+    //             closest = record.t;
+    //             hasHitAnything = true;
+    //         }
+    //     }
+
+    //     if(hasHitAnything) {
+    //         vec3 attenuation;
+    //         Ray scattered;
+
+    //         if(ScatterMaterial(ray, record, attenuation, scattered)) {
+    //             final *= attenuation;
+    //             ray = scattered;
+    //         } else {
+    //             return vec3(0);
+    //         }
+    //     } else {
+    //         float t = 0.5 * ray.d.y + 0.5;
+    //         final *= mix(vec3(1), vec3(0.5, 0.7, 1.0), t);
+    //         return final;
+    //     }
+    // }
+
+    Ray ray = Ray(ray_input.o, ray_input.d);
+    vec3 final = vec3(1, 1, 1);
+
+    while(true) {
+        if(depth <= 0) {
+            return vec3(0, 0, 0);
+        }
+
+        HitRecord record;
+        bool hasHitAnything = false;
+        float closest = 1000.0;
+        for(int i = 0; i < 2; i++) {
+            if(SphereHit(spheres[i], ray, record, 0.01, closest)) {
+                closest = record.t;
+                hasHitAnything = true;
+            }
+        }
+
+        if(hasHitAnything) {
+            vec3 target = record.p + RandomInUnitSphere(g_seed);
+            ray = Ray(record.p, target - record.p);
+            depth--;
+            final *= 0.5;
+        } else {
+            float t = 0.5 * ray.d.y + 0.5;
+            final *= mix(vec3(1, 1, 1), vec3(0.5, 0.7, 1.0), t);
+            return final;
         }
     }
-
-    return final;
 }
 
 vec3 TransformColor(vec3 pxin, int samples)
 {
     vec3 pxout;
     float scale = 1.0 / samples;
-    pxout.x = pxin.x * scale;
-    pxout.y = pxin.y * scale;
-    pxout.z = pxin.z * scale;
-
-    pxout.x = clamp(pxout.x, 0.0, 0.999);
-    pxout.y = clamp(pxout.y, 0.0, 0.999);
-    pxout.z = clamp(pxout.z, 0.0, 0.999);
+    pxout.x = sqrt(pxin.x * scale);
+    pxout.y = sqrt(pxin.y * scale);
+    pxout.z = sqrt(pxin.z * scale);
 
     return pxout;
 }
 
 void main()
-{
+{   
     ivec2 coords = ivec2(gl_GlobalInvocationID.xy);
+
+    g_seed = float(base_hash(floatBitsToUint(coords))) / float(0xffffffffU) + utime;
+
+    vec3 pixel = vec3(1, 1, 1);
+
+    const vec3 ORIGIN = vec3(0, 0, 0);
+    const float FOCAL_LENGTH = 10;
 
     float viewportHeight = 2.0;
     float viewportWidth = float(WIDTH) / float(HEIGHT) * viewportHeight;
 
-    vec3 horizontal = vec3(float(viewportWidth), 0.0, 0.0);
-    vec3 vertical = vec3(0.0, float(viewportHeight), 0.0);
-    vec3 lowerLeftCorner = CAM_LOCATION - horizontal /  2 - vertical / 2 - vec3(0, 0, FOCAL_LENGTH);
+    vec3 horizontal = vec3(viewportWidth, 0.0, 0.0);
+    vec3 vertical = vec3(0.0, viewportHeight, 0.0);
+    vec3 lowerLeftCorner = ORIGIN - horizontal / 2 - vertical / 2 - vec3(0, 0, FOCAL_LENGTH);
 
-    const int SAMPLES = 1;
-
-    vec3 pixel = vec3(0, 0, 0);
     for(int i = 0; i < SAMPLES; i++) {
-        float u = (coords.x + random(vec2(utime, gl_GlobalInvocationID.x)) / 4) / (WIDTH - 1);
-        float v = (coords.y + random(vec2(utime, gl_GlobalInvocationID.y)) / 4) / (HEIGHT - 1);
+        float u = (coords.x + hash1(g_seed) / 4) / (WIDTH - 1);
+        float v = (coords.y + hash1(g_seed) / 4) / (HEIGHT - 1);
 
-        Ray ray = Ray(CAM_LOCATION, lowerLeftCorner + u * horizontal + v * vertical - CAM_LOCATION);
-
-        pixel += Radiance(ray, 1);
+        // Ray ray = GetRay(ScaleCoordinates(vec2(u, v)));
+        // pixel += RayColor(ray, DEPTH);
+        Ray ray = Ray(ORIGIN, lowerLeftCorner + u * horizontal + v * vertical - ORIGIN);
+        pixel += RayColor(ray, DEPTH);
     }
 
+    // Ray ray = GetRay(ScaleCoordinates(coords));
+    // pixel = RayColor(ray, DEPTH);
     pixel = TransformColor(pixel, SAMPLES);
 
-    imageStore(screen, coords, vec4(pixel, 1.0));
+    imageStore(framebuffer, coords, vec4(pixel, 1.0));
 }

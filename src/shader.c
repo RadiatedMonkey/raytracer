@@ -25,8 +25,7 @@ inline char* fileRead(const char* path)
         return 0;
     }
 
-    size_t read = fread(buffer, sizeof(char), filesize, f);
-    printf("%s %i %i\n", buffer, filesize, read);
+    fread(buffer, sizeof(char), filesize, f);
     fclose(f);
 
     return buffer;
