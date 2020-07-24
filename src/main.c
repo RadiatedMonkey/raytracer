@@ -55,9 +55,16 @@ inline struct buffers createBuffers()
     return buf;
 }
 
+void resizeCallback(GLFWwindow* window, int width, int height)
+{
+    glViewport(0, 0, width, height);
+}
+
 int main(int argc, char** argv)
 {
     GLFWwindow* window = windowCreate(800, 600, "Window", true);
+
+    glfwSetFramebufferSizeCallback(window, resizeCallback);
 
     GLuint computeprogram;
     {

@@ -138,16 +138,23 @@ bool hit_sphere(Sphere s, Ray r, float tMin, float tMax, out HitRecord rec)
 }
 
 Sphere spheres[] = Sphere[](
-    Sphere(vec3(-2, 0, 3), 1.0, METAL, vec3(0.75, 0.1, 0.25)),
-    Sphere(vec3(1.0, 0, 2), 1.0, DIFFUSE, vec3(0.5, 0.75, 0.1)),
-    Sphere(vec3(0, -101, 0), 100, DIFFUSE, vec3(0.5, 0.5, 0.75))
+    Sphere(
+        vec3(2, 0, 3), 1.0, METAL, vec3(0.75, 0.5, 0.5)
+    ),
+    Sphere(
+        vec3(-2, 0, 3), 1.0, METAL, vec3(0.5, 0.5, 0.75)
+    ),
+    Sphere(
+        vec3(0, 0, 3), 1.0, DIFFUSE, vec3(0.75, 0.75, 0.75)
+    ),
+    Sphere(vec3(0, -101, 0), 100, DIFFUSE, vec3(1., 1., 1.))
 );
 
 bool hit_scene(Ray r, out HitRecord rc) {
     bool hitAnything = false;
     float closest = 10000.0;
 
-    for(int i = 0; i < 3; i++) {
+    for(int i = 0; i < 4; i++) {
         if(hit_sphere(spheres[i], r, 0.001, closest, rc)) {
             hitAnything = true;
             closest = rc.t;
@@ -242,7 +249,7 @@ void main() {
 
     g_seed = float(base_hash(floatBitsToUint(vec2(coords))))/float(0xffffffffU)+utime;
 
-    const int DEPTH = 5, SAMPLES = 5;
+    const int DEPTH = 10, SAMPLES = 500;
 
     vec2 rcoords = vec2(
         coords.x + hash1(g_seed),
