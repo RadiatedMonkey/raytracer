@@ -25,6 +25,7 @@ struct HitRecord {
     bool frontFace;
     vec3 albedo;
     int material;
+    float roughness;
 };
 
 HitRecord set_face_normal(HitRecord rc, Ray r, vec3 n)
@@ -39,6 +40,7 @@ struct Sphere {
     float r;
     int material;
     vec3 albedo;
+    float roughness;
 };
 
 float length_squared(vec3 v)
@@ -113,6 +115,7 @@ bool hit_sphere(Sphere s, Ray r, float tMin, float tMax, out HitRecord rec)
             rec.p = r.o + r.d * tmp;
             rec.material = s.material;
             rec.albedo = s.albedo;
+            rec.roughness = s.roughness;
 
             vec3 n = (rec.p - s.c) / s.r;
             rec = set_face_normal(rec, r, n);
@@ -126,6 +129,7 @@ bool hit_sphere(Sphere s, Ray r, float tMin, float tMax, out HitRecord rec)
             rec.p = r.o + r.d * tmp;
             rec.material = s.material;
             rec.albedo = s.albedo;
+            rec.roughness = s.roughness;
             
             vec3 n = (rec.p - s.c) / s.r;
             rec = set_face_normal(rec, r, n);
@@ -139,15 +143,15 @@ bool hit_sphere(Sphere s, Ray r, float tMin, float tMax, out HitRecord rec)
 
 Sphere spheres[] = Sphere[](
     Sphere(
-        vec3(2, 0, 3), 1.0, METAL, vec3(0.75, 0.5, 0.5)
+        vec3(2, 0, 3), 1.0, METAL, vec3(0.75, 0.5, 0.5), 0
     ),
     Sphere(
-        vec3(-2, 0, 3), 1.0, METAL, vec3(0.5, 0.5, 0.75)
+        vec3(-2, 0, 3), 1.0, METAL, vec3(0.5, 0.5, 0.75), 0.25
     ),
     Sphere(
-        vec3(0, 0, 3), 1.0, DIFFUSE, vec3(0.75, 0.75, 0.75)
+        vec3(0, 0, 3), 1.0, DIFFUSE, vec3(0.75, 0.75, 0.75), 0
     ),
-    Sphere(vec3(0, -101, 0), 100, DIFFUSE, vec3(1., 1., 1.))
+    Sphere(vec3(0, -101, 0), 100, DIFFUSE, vec3(1., 1., 1.), 0)
 );
 
 bool hit_scene(Ray r, out HitRecord rc) {
@@ -183,7 +187,7 @@ bool scatter(Ray r, HitRecord rc, out vec3 attenuation, out Ray scattered)
         return true;
     } else if(rc.material == METAL) {
         vec3 reflected = reflect(normalize(r.d), rc.n);
-        scattered = Ray(rc.p, reflected);
+        scattered = Ray(rc.p, reflected + rc.roughness * random_in_unit_sphere(g_seed));
         attenuation = rc.albedo;
         return dot(scattered.d, rc.n) > 0;
     }
@@ -249,7 +253,7 @@ void main() {
 
     g_seed = float(base_hash(floatBitsToUint(vec2(coords))))/float(0xffffffffU)+utime;
 
-    const int DEPTH = 10, SAMPLES = 500;
+    const int DEPTH = 10, SAMPLES = 10;
 
     vec2 rcoords = vec2(
         coords.x + hash1(g_seed),
