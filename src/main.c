@@ -11,6 +11,14 @@ struct buffers {
     GLuint vao, vbo;
 };
 
+static GLint widthloc;
+static GLint heightloc;
+static GLuint screenTexture;
+static GLuint computeprogram;
+
+static int windowWidth;
+static int windowHeight;
+
 inline GLuint createScreenTexture(int width, int height)
 {
     GLuint screenTexture;
@@ -58,6 +66,13 @@ inline struct buffers createBuffers()
 void resizeCallback(GLFWwindow* window, int width, int height)
 {
     glViewport(0, 0, width, height);
+    glUseProgram(computeprogram);
+    glUniform1f(widthloc, (GLfloat)width);
+    glUniform1f(heightloc, (GLfloat)height);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, width, height, 0, GL_RGBA, GL_FLOAT, 0);
+
+    windowWidth = width;
+    windowHeight = height;
 }
 
 int main(int argc, char** argv)
@@ -66,7 +81,6 @@ int main(int argc, char** argv)
 
     glfwSetFramebufferSizeCallback(window, resizeCallback);
 
-    GLuint computeprogram;
     {
         GLuint computeshader = shaderCreate("../shaders/raytracer.comp", GL_COMPUTE_SHADER);
 
@@ -82,22 +96,24 @@ int main(int argc, char** argv)
         quadprogram = shaderCreateProgram(2, shaders);
     }
 
-    int windowWidth, windowHeight;
     glfwGetWindowSize(window, &windowWidth, &windowHeight);
 
     GLint timeloc = glGetUniformLocation(computeprogram, "utime");
-    GLint frameloc = glGetUniformLocation(computeprogram, "frame");
+    widthloc = glGetUniformLocation(computeprogram, "uwidth");
+    heightloc = glGetUniformLocation(computeprogram, "uheight");
 
-    GLuint screenTexture = createScreenTexture(windowWidth, windowHeight);
+    glUseProgram(computeprogram);
+    glUniform1f(widthloc, (GLfloat)windowWidth);
+    glUniform1f(heightloc, (GLfloat)windowHeight);
+
+    screenTexture = createScreenTexture(windowWidth, windowHeight);
     struct buffers bufs = createBuffers();
 
     glfwSwapInterval(1); // Enable vsync
-    int frame = 0;
     while(!glfwWindowShouldClose(window)) {
         {
             glUseProgram(computeprogram);
             glUniform1f(timeloc, (float)glfwGetTime());
-            glUniform1i(frameloc, frame);
             glDispatchCompute((GLuint)windowWidth, (GLuint)windowHeight, 1);
         }
 
@@ -112,14 +128,14 @@ int main(int argc, char** argv)
             glDrawArrays(GL_TRIANGLES, 0, 6);
         }
 
-        frame++;
-
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
 
     glDeleteVertexArrays(1, &bufs.vao);
     glDeleteBuffers(1, &bufs.vbo);
+
+    glDeleteTextures(1, &screenTexture);
 
     glDeleteProgram(computeprogram);
     glDeleteProgram(quadprogram);
