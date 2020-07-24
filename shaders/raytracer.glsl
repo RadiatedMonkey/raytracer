@@ -4,9 +4,9 @@ layout(local_size_x = 8, local_size_y = 8) in;
 layout(rgba32f, binding = 0) uniform image2D framebuffer;
 
 uniform float utime;
+uniform float uwidth;
+uniform float uheight;
 
-#define WIDTH 800.0
-#define HEIGHT 600.0
 #define FOV 90.0
 #define PI 3.1415926
 #define AMBIENT_LIGHT 0.5
@@ -148,22 +148,23 @@ bool hit_sphere(Sphere s, Ray r, float tMin, float tMax, out HitRecord rec)
 
 Sphere spheres[] = Sphere[](
     Sphere(
-        vec3(2, 0, 3), 1.0, METAL, vec3(0.75, 0.5, 0.5), 0, 0
+        vec3(2, 0, -3), 1.0, METAL, vec3(0.75, 0.5, 0.5), 0, 0
     ),
     Sphere(
-        vec3(-2, 0, 3), 1.0, METAL, vec3(0.5, 0.5, 0.75), 0.25, 0
+        vec3(-2, 0, -3), 1.0, METAL, vec3(0.5, 0.5, 0.75), 0.25, 0
     ),
     Sphere(
-        vec3(0, 0, 3), 1.0, DIELECTRIC, vec3(0.75, 0.75, 0.75), 0, -1.5
+        vec3(0, 0.5, -3), 1.0, DIELECTRIC, vec3(0.75, 0.75, 0.75), 0, 1.5
     ),
-    Sphere(vec3(0, -101, 0), 100, DIFFUSE, vec3(1., 1., 1.), 0, 0)
+    Sphere(vec3(0, -101, 0), 100, DIFFUSE, vec3(1., 1., 1.), 0, 0),
+    Sphere(vec3(0, 0, -10), 5, METAL, vec3(0.75, 0.75, 0.75), 0.1, 1.5)
 );
 
 bool hit_scene(Ray r, out HitRecord rc) {
     bool hitAnything = false;
     float closest = 10000.0;
 
-    for(int i = 0; i < 4; i++) {
+    for(int i = 0; i < 5; i++) {
         if(hit_sphere(spheres[i], r, 0.001, closest, rc)) {
             hitAnything = true;
             closest = rc.t;
@@ -214,22 +215,22 @@ bool scatter(Ray r, HitRecord rc, out vec3 attenuation, out Ray scattered)
         attenuation = vec3(1);
         float etai_over_etat = rc.frontFace ? (1. / rc.ref_idx) : rc.ref_idx;
 
-        float cos_theta = min(dot(-r.d, rc.n), 1.);
-        float sin_theta = sqrt(1.0 - cos_theta * cos_theta);
+        float cos_theta = min(dot(-normalize(r.d), rc.n), 1.);
+        float sin_theta = sqrt(1. - cos_theta * cos_theta);
         if(etai_over_etat * sin_theta > 1) {
-            vec3 reflected = reflect(r.d, rc.n);
+            vec3 reflected = reflect(normalize(r.d), rc.n);
             scattered = Ray(rc.p, reflected);
-            return true;
+            return true;    
         }
 
         float reflect_prob = schlick(cos_theta, etai_over_etat);
         if(hash1(g_seed) < reflect_prob) {
-            vec3 reflected = reflect(r.d, rc.n);
+            vec3 reflected = reflect(normalize(r.d), rc.n);
             scattered = Ray(rc.p, reflected);
             return true;
         }
 
-        vec3 refracted = refract(r.d, rc.n, etai_over_etat);
+        vec3 refracted = refract(normalize(r.d), rc.n, etai_over_etat);
         scattered = Ray(rc.p, refracted);
         return true;
     }
@@ -269,17 +270,48 @@ vec3 ray_color(Ray r_in, int depth)
     return final;
 }
 
-Ray get_camera_ray(vec2 c)
+struct Camera {
+    vec3 origin, lower_left_corner, horizontal, vertical;
+};
+
+Camera new_camera(float vfov, float aspect_ratio)
 {
-    float u = (WIDTH / HEIGHT) * (2. * c.x / WIDTH - 1);
-    float v = (2. * c.y / HEIGHT - 1);
+    Camera c;
 
-    const float fovFactor = 1. / tan(FOV / 2.);
+    float theta = vfov * PI / 180.;
+    float h = tan(theta / 2.);
+    float viewport_height = 2. * h;
+    float viewport_width = aspect_ratio * viewport_height;
 
+    const float focal_length = 1.;
+
+    c.origin = vec3(0);
+    c.horizontal = vec3(viewport_width, 0, 0);
+    c.vertical = vec3(0, viewport_height, 0);
+    c.lower_left_corner = c.origin - c.horizontal / 2 - c.vertical / 2 - vec3(0, 0, focal_length);
+
+    return c;
+}
+
+Ray get_camera_ray(Camera c, vec2 uv)
+{
     return Ray(
-        vec3(0), vec3(u, v, fovFactor)
+        c.origin,
+        c.lower_left_corner + uv.x * c.horizontal + uv.y * c.vertical - c.origin
     );
 }
+
+// Ray get_camera_ray(vec2 c)
+// {
+//     float u = (uwidth / uheight) * (2. * c.x / uwidth - 1);
+//     float v = (2. * c.y / uheight - 1);
+
+//     const float fovFactor = 1. / tan(FOV / 2.);
+
+//     return Ray(
+//         vec3(0), vec3(u, v, fovFactor)
+//     );
+// }
 
 vec3 gamma_correct(vec3 px, int samples)
 {
@@ -290,26 +322,23 @@ vec3 gamma_correct(vec3 px, int samples)
     return px;
 }
 
+Camera cam = new_camera(90.0, uwidth / uheight);
+
 void main() {
     ivec2 coords = ivec2(gl_GlobalInvocationID.xy);
 
     g_seed = float(base_hash(floatBitsToUint(vec2(coords))))/float(0xffffffffU)+utime;
 
-    const int DEPTH = 100, SAMPLES = 500;
-
-    vec2 rcoords = vec2(
-        coords.x + hash1(g_seed),
-        coords.y + hash1(g_seed)
-    );
-    Ray r = get_camera_ray(rcoords);
+    const int DEPTH = 10, SAMPLES = 50;
     
     vec3 pixel;
     for(int i = 0; i < SAMPLES; i++) {
-        vec2 ircoords = vec2(
-            coords.x + hash1(g_seed),
-            coords.y + hash1(g_seed)
-        );
-        Ray r = get_camera_ray(ircoords);
+        // vec2 ircoords = vec2(
+        //     coords.x + hash1(g_seed),
+        //     coords.y + hash1(g_seed)
+        // );
+        vec2 uv = (coords + hash2(g_seed)) / vec2(uwidth, uheight);
+        Ray r = get_camera_ray(cam, uv);
         pixel += vec3(
             ray_color(r, DEPTH)
         );

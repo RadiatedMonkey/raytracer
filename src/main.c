@@ -11,6 +11,14 @@ struct buffers {
     GLuint vao, vbo;
 };
 
+static GLint widthloc;
+static GLint heightloc;
+static GLuint screenTexture;
+static GLuint computeprogram;
+
+static int windowWidth;
+static int windowHeight;
+
 inline GLuint createScreenTexture(int width, int height)
 {
     GLuint screenTexture;
@@ -58,6 +66,13 @@ inline struct buffers createBuffers()
 void resizeCallback(GLFWwindow* window, int width, int height)
 {
     glViewport(0, 0, width, height);
+    glUseProgram(computeprogram);
+    glUniform1f(widthloc, (GLfloat)width);
+    glUniform1f(heightloc, (GLfloat)height);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, width, height, 0, GL_RGBA, GL_FLOAT, 0);
+
+    windowWidth = width;
+    windowHeight = height;
 }
 
 int main(int argc, char** argv)
@@ -66,7 +81,6 @@ int main(int argc, char** argv)
 
     glfwSetFramebufferSizeCallback(window, resizeCallback);
 
-    GLuint computeprogram;
     {
         GLuint computeshader = shaderCreate("../shaders/raytracer.glsl", GL_COMPUTE_SHADER);
 
@@ -82,12 +96,17 @@ int main(int argc, char** argv)
         quadprogram = shaderCreateProgram(2, shaders);
     }
 
-    int windowWidth, windowHeight;
     glfwGetWindowSize(window, &windowWidth, &windowHeight);
 
     GLint timeloc = glGetUniformLocation(computeprogram, "utime");
+    widthloc = glGetUniformLocation(computeprogram, "uwidth");
+    heightloc = glGetUniformLocation(computeprogram, "uheight");
 
-    GLuint screenTexture = createScreenTexture(windowWidth, windowHeight);
+    glUseProgram(computeprogram);
+    glUniform1f(widthloc, (GLfloat)windowWidth);
+    glUniform1f(heightloc, (GLfloat)windowHeight);
+
+    screenTexture = createScreenTexture(windowWidth, windowHeight);
     struct buffers bufs = createBuffers();
 
     glfwSwapInterval(1); // Enable vsync
@@ -115,6 +134,8 @@ int main(int argc, char** argv)
 
     glDeleteVertexArrays(1, &bufs.vao);
     glDeleteBuffers(1, &bufs.vbo);
+
+    glDeleteTextures(1, &screenTexture);
 
     glDeleteProgram(computeprogram);
     glDeleteProgram(quadprogram);
