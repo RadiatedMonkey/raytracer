@@ -68,15 +68,15 @@ int main(int argc, char** argv)
 
     GLuint computeprogram;
     {
-        GLuint computeshader = shaderCreate("../shaders/raytracer.glsl", GL_COMPUTE_SHADER);
+        GLuint computeshader = shaderCreate("../shaders/raytracer.comp", GL_COMPUTE_SHADER);
 
         computeprogram = shaderCreateProgram(1, &computeshader);
     }
 
     GLuint quadprogram;
     {
-        GLuint vertexshader = shaderCreate("../shaders/vquad.glsl", GL_VERTEX_SHADER);
-        GLuint fragmentshader = shaderCreate("../shaders/fquad.glsl", GL_FRAGMENT_SHADER);
+        GLuint vertexshader = shaderCreate("../shaders/quad.vert", GL_VERTEX_SHADER);
+        GLuint fragmentshader = shaderCreate("../shaders/quad.frag", GL_FRAGMENT_SHADER);
 
         GLuint shaders[] = { vertexshader, fragmentshader };
         quadprogram = shaderCreateProgram(2, shaders);
@@ -86,15 +86,18 @@ int main(int argc, char** argv)
     glfwGetWindowSize(window, &windowWidth, &windowHeight);
 
     GLint timeloc = glGetUniformLocation(computeprogram, "utime");
+    GLint frameloc = glGetUniformLocation(computeprogram, "frame");
 
     GLuint screenTexture = createScreenTexture(windowWidth, windowHeight);
     struct buffers bufs = createBuffers();
 
     glfwSwapInterval(1); // Enable vsync
+    int frame = 0;
     while(!glfwWindowShouldClose(window)) {
         {
             glUseProgram(computeprogram);
             glUniform1f(timeloc, (float)glfwGetTime());
+            glUniform1i(frameloc, frame);
             glDispatchCompute((GLuint)windowWidth, (GLuint)windowHeight, 1);
         }
 
@@ -108,6 +111,8 @@ int main(int argc, char** argv)
             glBindTexture(GL_TEXTURE_2D, screenTexture);
             glDrawArrays(GL_TRIANGLES, 0, 6);
         }
+
+        frame++;
 
         glfwSwapBuffers(window);
         glfwPollEvents();
