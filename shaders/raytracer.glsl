@@ -295,7 +295,7 @@ void main() {
 
     g_seed = float(base_hash(floatBitsToUint(vec2(coords))))/float(0xffffffffU)+utime;
 
-    const int DEPTH = 100, SAMPLES = 50;
+    const int DEPTH = 100, SAMPLES = 500;
 
     vec2 rcoords = vec2(
         coords.x + hash1(g_seed),
