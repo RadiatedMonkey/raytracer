@@ -7,6 +7,7 @@ uniform float utime;
 uniform float uwidth;
 uniform float uheight;
 
+
 #define FOV 90.0
 #define PI 3.1415926
 #define AMBIENT_LIGHT 0.5
@@ -148,16 +149,18 @@ bool hit_sphere(Sphere s, Ray r, float tMin, float tMax, out HitRecord rec)
 
 Sphere spheres[] = Sphere[](
     Sphere(
-        vec3(2, 0, -3), 1.0, METAL, vec3(0.75, 0.5, 0.5), 0, 0
+        vec3(2, 0, -4), 1.0, METAL, vec3(0.75, 0.5, 0.5), 0, 0
     ),
     Sphere(
-        vec3(-2, 0, -3), 1.0, METAL, vec3(0.5, 0.5, 0.75), 0.25, 0
+        vec3(-1.5, 0, -5), 1.0, METAL, vec3(0.5, 0.5, 0.75), 0.25, 0
     ),
     Sphere(
-        vec3(0, 0.5, -3), 1.0, DIELECTRIC, vec3(0.75, 0.75, 0.75), 0, 1.5
+        vec3(0, 0, -4), 1.0, DIELECTRIC, vec3(0.75, 0.75, 0.75), 0, 1.5
     ),
-    Sphere(vec3(0, -101, 0), 100, DIFFUSE, vec3(1., 1., 1.), 0, 0),
-    Sphere(vec3(0, 0, -10), 5, METAL, vec3(0.75, 0.75, 0.75), 0.1, 1.5)
+    Sphere(
+        vec3(1, 1, -7), 2.0, METAL, vec3(0.5, 0.75, 0.75), 0, 0
+    ),
+    Sphere(vec3(0, -101, 0), 100, DIFFUSE, vec3(1., 1., 1.), 0, 0)
 );
 
 bool hit_scene(Ray r, out HitRecord rc) {
@@ -329,7 +332,7 @@ void main() {
 
     g_seed = float(base_hash(floatBitsToUint(vec2(coords))))/float(0xffffffffU)+utime;
 
-    const int DEPTH = 10, SAMPLES = 50;
+    const int DEPTH = 100, SAMPLES = 200;
     
     vec3 pixel;
     for(int i = 0; i < SAMPLES; i++) {
