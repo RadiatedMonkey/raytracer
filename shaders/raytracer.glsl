@@ -277,8 +277,10 @@ struct Camera {
     vec3 origin, lower_left_corner, horizontal, vertical;
 };
 
-Camera new_camera(float vfov, float aspect_ratio)
-{
+Camera new_camera(
+    vec3 lookfrom, vec3 lookat, vec3 vup,
+    float vfov, float aspect_ratio
+) {
     Camera c;
 
     float theta = vfov * PI / 180.;
@@ -286,18 +288,24 @@ Camera new_camera(float vfov, float aspect_ratio)
     float viewport_height = 2. * h;
     float viewport_width = aspect_ratio * viewport_height;
 
-    const float focal_length = 1.;
+    vec3 w = normalize(lookfrom - lookat);
+    vec3 u = normalize(cross(vup, w));
+    vec3 v = cross(w, u);
 
-    c.origin = vec3(0);
-    c.horizontal = vec3(viewport_width, 0, 0);
-    c.vertical = vec3(0, viewport_height, 0);
-    c.lower_left_corner = c.origin - c.horizontal / 2 - c.vertical / 2 - vec3(0, 0, focal_length);
+    c.origin = lookfrom;
+    c.horizontal = viewport_width * u;
+    c.vertical = viewport_height * v;
+    c.lower_left_corner = c.origin - c.horizontal / 2. - c.vertical / 2. - w;
 
     return c;
 }
 
 Ray get_camera_ray(Camera c, vec2 uv)
 {
+    // return Ray(
+    //     c.origin,
+    //     c.lower_left_corner + uv.x * c.horizontal + uv.y * c.vertical - c.origin
+    // );
     return Ray(
         c.origin,
         c.lower_left_corner + uv.x * c.horizontal + uv.y * c.vertical - c.origin
@@ -325,14 +333,17 @@ vec3 gamma_correct(vec3 px, int samples)
     return px;
 }
 
-Camera cam = new_camera(90.0, uwidth / uheight);
-
 void main() {
     ivec2 coords = ivec2(gl_GlobalInvocationID.xy);
+    Camera cam = new_camera(
+        vec3(-3, 2, -1), vec3(0, 0, -5),
+        vec3(0, 1, 0),    
+        90., uwidth / uheight
+    );
 
     g_seed = float(base_hash(floatBitsToUint(vec2(coords))))/float(0xffffffffU)+utime;
 
-    const int DEPTH = 100, SAMPLES = 200;
+    const int DEPTH = 100, SAMPLES = 100;
     
     vec3 pixel;
     for(int i = 0; i < SAMPLES; i++) {
