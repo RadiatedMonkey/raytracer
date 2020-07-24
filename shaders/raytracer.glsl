@@ -105,8 +105,8 @@ bool hit_sphere(Sphere s, Ray r, float tMin, float tMax, out HitRecord rec)
     return false;
 }
 
-const Sphere spheres[] = Sphere[](
-    Sphere(vec3(0, 0, 4), 1),
+Sphere spheres[] = Sphere[](
+    Sphere(vec3(0, sin(utime), 2), sin(utime)),
     Sphere(vec3(0, -1001, 0), 1000)
 );
 
@@ -149,10 +149,10 @@ vec3 ray_color(Ray r_in, int depth)
     return final;
 }
 
-Ray get_camera_ray(ivec2 c)
+Ray get_camera_ray(vec2 c)
 {
-    float u = (WIDTH / HEIGHT) * (2. * float(c.x) / WIDTH - 1);
-    float v = (2. * float(c.y) / HEIGHT - 1);
+    float u = (WIDTH / HEIGHT) * (2. * c.x / WIDTH - 1);
+    float v = (2. * c.y / HEIGHT - 1);
 
     const float fovFactor = 1. / tan(FOV / 2.);
 
@@ -161,13 +161,41 @@ Ray get_camera_ray(ivec2 c)
     );
 }
 
+vec3 transform_color(vec3 px, int samples)
+{
+    float scale = 1. / samples;
+    px *= sqrt(scale);
+    return px;
+}
+
 void main() {
     ivec2 coords = ivec2(gl_GlobalInvocationID.xy);
 
     g_seed = float(base_hash(floatBitsToUint(vec2(coords))))/float(0xffffffffU)+utime;
 
-    Ray ray = get_camera_ray(coords);
-    vec3 pixel = ray_color(ray, 5);
+    const int DEPTH = 5, SAMPLES = 5;
 
-    imageStore(framebuffer, coords, vec4(pixel, 1.0));
+    vec2 rcoords = vec2(
+        coords.x + hash1(g_seed),
+        coords.y + hash1(g_seed)
+    );
+    Ray r = get_camera_ray(rcoords);
+    vec4 pixel = vec4(ray_color(r, DEPTH), 1.0);
+
+    for(int i = 0; i < SAMPLES; i++) {
+        vec2 ircoords = vec2(
+            coords.x + hash1(g_seed),
+            coords.y + hash1(g_seed)
+        );
+        Ray r = get_camera_ray(ircoords);
+        pixel += vec4(
+            transform_color(ray_color(r, DEPTH), SAMPLES), 5.
+        );
+    }
+
+    // pixel = (pixel + imageLoad(framebuffer, coords)) / 2.;
+    pixel /= SAMPLES;
+    pixel = (pixel + imageLoad(framebuffer, coords)) / 2.;
+
+    imageStore(framebuffer, coords, pixel);
 }
