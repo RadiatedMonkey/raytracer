@@ -11,6 +11,7 @@ struct buffers {
     GLuint vao, vbo;
 };
 
+static GLint timeloc;
 static GLint widthloc;
 static GLint heightloc;
 static GLuint screenTexture;
@@ -18,6 +19,8 @@ static GLuint computeprogram;
 
 static int windowWidth;
 static int windowHeight;
+
+static _Bool windowInFocus = 1;
 
 inline GLuint createScreenTexture(int width, int height)
 {
@@ -63,6 +66,20 @@ inline struct buffers createBuffers()
     return buf;
 }
 
+inline void createComputeProgram()
+{
+    GLuint computeshader = shaderCreate("../../shaders/raytracer.glsl", GL_COMPUTE_SHADER);
+    computeprogram = shaderCreateProgram(1, &computeshader);
+
+    timeloc = glGetUniformLocation(computeprogram, "utime");
+    widthloc = glGetUniformLocation(computeprogram, "uwidth");
+    heightloc = glGetUniformLocation(computeprogram, "uheight");
+
+    glUseProgram(computeprogram);
+    glUniform1f(widthloc, (GLfloat)windowWidth);
+    glUniform1f(heightloc, (GLfloat)windowHeight);
+}
+
 void resizeCallback(GLFWwindow* window, int width, int height)
 {
     glViewport(0, 0, width, height);
@@ -75,42 +92,52 @@ void resizeCallback(GLFWwindow* window, int width, int height)
     windowHeight = height;
 }
 
+void focusCallback(GLFWwindow* window, int focused)
+{
+    windowInFocus = focused;
+}
+
+void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
+{
+    if(key == GLFW_KEY_R && action == GLFW_PRESS) {
+        printf("refresh\n");
+
+        glDeleteProgram(computeprogram);
+        createComputeProgram();
+    }
+}
+
 int main(int argc, char** argv)
 {
     GLFWwindow* window = windowCreate(800, 600, "Window", true);
 
     glfwSetFramebufferSizeCallback(window, resizeCallback);
+    glfwSetWindowFocusCallback(window, focusCallback);
+    glfwSetKeyCallback(window, keyCallback);
+    glfwGetWindowSize(window, &windowWidth, &windowHeight);
 
-    {
-        GLuint computeshader = shaderCreate("../shaders/raytracer.glsl", GL_COMPUTE_SHADER);
-
-        computeprogram = shaderCreateProgram(1, &computeshader);
-    }
+    createComputeProgram();
 
     GLuint quadprogram;
     {
-        GLuint vertexshader = shaderCreate("../shaders/vquad.glsl", GL_VERTEX_SHADER);
-        GLuint fragmentshader = shaderCreate("../shaders/fquad.glsl", GL_FRAGMENT_SHADER);
+        GLuint vertexshader = shaderCreate("../../shaders/vquad.glsl", GL_VERTEX_SHADER);
+        GLuint fragmentshader = shaderCreate("../../shaders/fquad.glsl", GL_FRAGMENT_SHADER);
 
         GLuint shaders[] = { vertexshader, fragmentshader };
         quadprogram = shaderCreateProgram(2, shaders);
     }
-
-    glfwGetWindowSize(window, &windowWidth, &windowHeight);
-
-    GLint timeloc = glGetUniformLocation(computeprogram, "utime");
-    widthloc = glGetUniformLocation(computeprogram, "uwidth");
-    heightloc = glGetUniformLocation(computeprogram, "uheight");
-
-    glUseProgram(computeprogram);
-    glUniform1f(widthloc, (GLfloat)windowWidth);
-    glUniform1f(heightloc, (GLfloat)windowHeight);
 
     screenTexture = createScreenTexture(windowWidth, windowHeight);
     struct buffers bufs = createBuffers();
 
     glfwSwapInterval(1); // Enable vsync
     while(!glfwWindowShouldClose(window)) {
+        if(!windowInFocus) {
+            glfwPollEvents();
+            glfwSwapBuffers(window);
+            continue;
+        }
+
         {
             glUseProgram(computeprogram);
             glUniform1f(timeloc, (float)glfwGetTime());

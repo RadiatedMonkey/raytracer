@@ -237,6 +237,8 @@ bool scatter(Ray r, HitRecord rc, out vec3 attenuation, out Ray scattered)
         scattered = Ray(rc.p, refracted);
         return true;
     }
+
+    return false;
 }
 
 vec3 ray_color(Ray r_in, int depth)
