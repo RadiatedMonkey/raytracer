@@ -29,9 +29,7 @@ struct HitRecord {
     vec3 p, n;
     float t, u, v;
     bool frontFace;
-    vec3 albedo;
-    int material;
-    float material_property; // Roughness and refractive index
+    uint material;
 };
 
 HitRecord set_face_normal(HitRecord rc, Ray r, vec3 n)
@@ -41,12 +39,16 @@ HitRecord set_face_normal(HitRecord rc, Ray r, vec3 n)
     return rc;
 }
 
+struct Material {
+    int type;
+    vec3 albedo;
+    float property;
+};
+
 struct Sphere {
     vec3 c;
     float r;
-    int material;
-    vec3 albedo;
-    float material_property;
+    uint material;
 };
 
 void get_sphere_uv(in vec3 p, inout HitRecord rc) {
@@ -144,8 +146,6 @@ bool hit_sphere(Sphere s, Ray r, float tMin, float tMax, out HitRecord rec)
             rec.t = tmp;
             rec.p = r.o + r.d * tmp;
             rec.material = s.material;
-            rec.albedo = s.albedo;
-            rec.material_property = s.material_property;
 
             vec3 n = (rec.p - s.c) / s.r;
             rec = set_face_normal(rec, r, n);
@@ -159,8 +159,6 @@ bool hit_sphere(Sphere s, Ray r, float tMin, float tMax, out HitRecord rec)
             rec.t = tmp;
             rec.p = r.o + r.d * tmp;
             rec.material = s.material;
-            rec.albedo = s.albedo;
-            rec.material_property = s.material_property;
             
             vec3 n = (rec.p - s.c) / s.r;
             rec = set_face_normal(rec, r, n);
@@ -172,11 +170,18 @@ bool hit_sphere(Sphere s, Ray r, float tMin, float tMax, out HitRecord rec)
     return false;
 }
 
+Material materials[] = Material[](
+    Material(DIELECTRIC, vec3(1), 1.5),
+    Material(METAL, vec3(0.9), 0.5),
+    Material(DIFFUSE, vec3(1.0, 0.7, 0.5), 0),
+    Material(DIFFUSE, vec3(1), 0)
+);
+
 Sphere spheres[] = Sphere[](
-    Sphere(vec3(0, 0, -3), 1, DIELECTRIC, vec3(1, 0.5, 0.25), 1.2),
-    Sphere(vec3(2, 0, -3), 1, DIFFUSE, vec3(1.0, 0.7, 0.5), 0),
-    Sphere(vec3(-2, 0, -3), 1, METAL, vec3(0.9, 0.9, 0.9), 0.5),
-    Sphere(vec3(0, -1001, 0), 1000, DIFFUSE, vec3(1.0), 0)
+    Sphere(vec3(0, 0, -3), 1, 0),
+    Sphere(vec3(2, 0, -3), 1, 2),
+    Sphere(vec3(-2, 0, -3), 1, 1),
+    Sphere(vec3(0, -1001, 0), 1000, 3)
 );
 
 bool hit_scene(Ray r, out HitRecord rc) {
@@ -219,19 +224,19 @@ bool scatter(Ray r, HitRecord rc, out vec3 attenuation, out Ray scattered)
         return false;
     }
 
-    if(rc.material == DIFFUSE) {
+    if(materials[rc.material].type == DIFFUSE) {
         vec3 scatter_direction = rc.n + random_unit_vector(g_seed);
         scattered = Ray(rc.p, scatter_direction);
-        attenuation = rc.albedo;
+        attenuation = materials[rc.material].albedo;
         return true;
-    } else if(rc.material == METAL) {
+    } else if(materials[rc.material].type == METAL) {
         vec3 reflected = reflect(normalize(r.d), rc.n);
-        scattered = Ray(rc.p, reflected + rc.material_property * random_in_unit_sphere(g_seed));
-        attenuation = rc.albedo;
+        scattered = Ray(rc.p, reflected + materials[rc.material].property * random_in_unit_sphere(g_seed));
+        attenuation = materials[rc.material].albedo;
         return dot(scattered.d, rc.n) > 0;
-    } else if(rc.material == DIELECTRIC) {
+    } else if(materials[rc.material].type == DIELECTRIC) {
         attenuation = vec3(1);
-        float etai_over_etat = rc.frontFace ? (1. / rc.material_property) : rc.material_property;
+        float etai_over_etat = rc.frontFace ? (1. / materials[rc.material].property) : materials[rc.material].property;
 
         float cos_theta = min(dot(-normalize(r.d), rc.n), 1.);
         float sin_theta = sqrt(1. - cos_theta * cos_theta);
