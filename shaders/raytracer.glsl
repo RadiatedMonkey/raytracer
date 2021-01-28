@@ -17,11 +17,14 @@ layout(binding = 1) uniform sampler2D earthtexture;
 #define DIFFUSE 0
 #define METAL 1
 #define DIELECTRIC 2
+#define DIFFUSE_LIGHT 3
 
 // Textures
 #define SOLID_COLOR 0
 #define CHECKERED 1
 #define IMAGE 2
+
+const int DEPTH = 100, SAMPLES = 5;
 
 float atan2(in float y, in float x)
 {
@@ -38,14 +41,14 @@ struct HitRecord
 {
     vec3 p, n;
     float t, u, v;
-    bool frontFace;
-    uint material;
+    bool f;
+    uint m;
 };
 
 HitRecord set_face_normal(HitRecord rc, Ray r, vec3 n)
 {
-    rc.frontFace = dot(r.d, n) < 0;
-    rc.n = rc.frontFace ? n : -n;
+    rc.f = dot(r.d, n) < 0;
+    rc.n = rc.f ? n : -n;
     return rc;
 }
 
@@ -69,7 +72,13 @@ struct Sphere
 {
     vec3 c;
     float r;
-    uint material;
+    uint m;
+};
+
+struct Rect
+{
+    float x0, x1, y0, y1, k;
+    uint m;
 };
 
 struct Camera
@@ -84,15 +93,15 @@ sampler2D images[] = sampler2D[](
 Texture textures[] = Texture[](
     Texture(CHECKERED, vec3(1), 1, 2),
     Texture(SOLID_COLOR, vec3(0.9), 0, 0),
-    Texture(SOLID_COLOR, vec3(1.0, 0.7, 0.5), 0, 0),
+    Texture(SOLID_COLOR, vec3(0.5, 0.7, 1.0), 0, 0),
     Texture(IMAGE, vec3(1), 0, 0)
 );
 
 Material materials[] = Material[](
     Material(DIELECTRIC, 1, 1.5),
     Material(DIFFUSE, 3, 0.0),
-    Material(METAL, 1, 0.25),
-    Material(DIFFUSE, 0, 1.1)
+    Material(DIFFUSE_LIGHT, 2, 0.25),
+    Material(DIFFUSE, 0, 0)
 );
 
 Sphere spheres[] = Sphere[](
@@ -100,6 +109,10 @@ Sphere spheres[] = Sphere[](
     Sphere(vec3(2, 0, -3), 1, 2),
     Sphere(vec3(-2, 0, -3), 1, 1),
     Sphere(vec3(0, -1001, 0), 1000, 3)
+);
+
+Rect rects[] = Rect[](
+    Rect(3, 5, 1, 3, -2, 3)
 );
 
 void get_sphere_uv(in vec3 p, inout HitRecord rc)
@@ -212,39 +225,39 @@ bool near_zero(in vec3 point)
     return (abs(point.x) < s) && (abs(point.y) < s) && (abs(point.z) < s);
 }
 
-bool hit_sphere(Sphere s, Ray r, float tMin, float tMax, out HitRecord rec)
+bool hit_sphere(Sphere sp, Ray r, float tmin, float tmax, out HitRecord rc)
 {
-    vec3 oc = r.o - s.c;
+    vec3 oc = r.o - sp.c;
     float a = length_squared(r.d);
     float halfB = dot(oc, r.d);
-    float c = length_squared(oc) - s.r * s.r;
+    float c = length_squared(oc) - sp.r * sp.r;
     float d = halfB * halfB - a * c;
 
     if(d > 0.) {
         float root = sqrt(d);
 
         float tmp = (-halfB - root) / a;
-        if(tmp < tMax && tmp > tMin) {
-            rec.t = tmp;
-            rec.p = r.o + r.d * tmp;
-            rec.material = s.material;
+        if(tmp < tmax && tmp > tmin) {
+            rc.t = tmp;
+            rc.p = r.o + r.d * tmp;
+            rc.m = sp.m;
 
-            vec3 n = (rec.p - s.c) / s.r;
-            rec = set_face_normal(rec, r, n);
-            get_sphere_uv(n, rec);
+            vec3 n = (rc.p - sp.c) / sp.r;
+            rc = set_face_normal(rc, r, n);
+            get_sphere_uv(n, rc);
 
             return true;
         }
 
         tmp = (-halfB + root) / a;
-        if(tmp < tMax && tmp > tMin) {
-            rec.t = tmp;
-            rec.p = r.o + r.d * tmp;
-            rec.material = s.material;
+        if(tmp < tmax && tmp > tmin) {
+            rc.t = tmp;
+            rc.p = r.o + r.d * tmp;
+            rc.m = sp.m;
             
-            vec3 n = (rec.p - s.c) / s.r;
-            rec = set_face_normal(rec, r, n);
-            get_sphere_uv(n, rec);
+            vec3 n = (rc.p - sp.c) / sp.r;
+            rc = set_face_normal(rc, r, n);
+            get_sphere_uv(n, rc);
 
             return true;
         }
@@ -253,19 +266,45 @@ bool hit_sphere(Sphere s, Ray r, float tMin, float tMax, out HitRecord rec)
     return false;
 }
 
+bool hit_rect(in Rect rt, in Ray r, float tmin, float tmax, inout HitRecord rc) {
+    float t = (rt.k - r.o.z) / r.d.z;
+    if(t < tmin || t > tmax) return false;
+
+    float x = r.o.x + t * r.d.x;
+    float y = r.o.y + t * r.d.y;
+    if(x < rt.x0 || x > rt.x1 || y < rt.y0 || y > rt.y1) return false;
+
+    rc.u = (x - rt.x0) / (rt.x1 - rt.x0);
+    rc.v = (y - rt.y0) / (rt.y1 - rt.y0);
+    rc.t = t;
+
+    vec3 n = vec3(0, 0, 1);
+    set_face_normal(rc, r, n);
+    rc.m = rt.m;
+    rc.p = r.o + r.d * t;
+    return true;
+}
+
 bool hit_scene(Ray r, out HitRecord rc)
 {
-    bool hitAnything = false;
+    bool hit_anything = false;
     float closest = 10000.0;
 
     for(int i = 0; i < spheres.length(); i++) {
         if(hit_sphere(spheres[i], r, 0.001, closest, rc)) {
-            hitAnything = true;
+            hit_anything = true;
             closest = rc.t;
         }
     }
 
-    return hitAnything;
+    for(int i = 0; i < rects.length(); i++) {
+        if(hit_rect(rects[i], r, 0.001, closest, rc)) {
+            hit_anything = true;
+            closest = rc.t;
+        }
+    }
+
+    return hit_anything;
 }
 
 float schlick(float cosine, float ref_idx)
@@ -288,32 +327,40 @@ vec3 refract(vec3 uv, vec3 n, float etai_over_etat)
     return r_out_perp + r_out_parallel;
 }
 
+vec3 emitted(in Material material, float u, float v, in vec3 p) {
+    if(material.type == DIFFUSE_LIGHT) {
+        return get_texture_color_value(textures[material.texture], u, v, p);
+    } else {
+        return vec3(0);
+    }
+}
+
 bool scatter(Ray r, HitRecord rc, out vec3 attenuation, out Ray scattered)
 {
     if(near_zero(r.d)) {
         return false;
     }
 
-    if(materials[rc.material].type == DIFFUSE) {
+    if(materials[rc.m].type == DIFFUSE) {
         vec3 scatter_direction = rc.n + random_unit_vector(g_seed);
         scattered = Ray(rc.p, scatter_direction);
-        attenuation = get_texture_color_value(textures[materials[rc.material].texture], rc.u, rc.v, rc.p);
+        attenuation = get_texture_color_value(textures[materials[rc.m].texture], rc.u, rc.v, rc.p);
         return true;
-    } else if(materials[rc.material].type == METAL) {
+    } else if(materials[rc.m].type == METAL) {
         vec3 reflected = reflect(normalize(r.d), rc.n);
-        scattered = Ray(rc.p, reflected + materials[rc.material].property * random_in_unit_sphere(g_seed));
-        attenuation = get_texture_color_value(textures[materials[rc.material].texture], rc.u, rc.v, rc.p);
+        scattered = Ray(rc.p, reflected + materials[rc.m].property * random_in_unit_sphere(g_seed));
+        attenuation = get_texture_color_value(textures[materials[rc.m].texture], rc.u, rc.v, rc.p);
         return dot(scattered.d, rc.n) > 0;
-    } else if(materials[rc.material].type == DIELECTRIC) {
+    } else if(materials[rc.m].type == DIELECTRIC) {
         attenuation = vec3(1);
-        float etai_over_etat = rc.frontFace ? (1. / materials[rc.material].property) : materials[rc.material].property;
+        float etai_over_etat = rc.f ? (1. / materials[rc.m].property) : materials[rc.m].property;
 
         float cos_theta = min(dot(-normalize(r.d), rc.n), 1.);
         float sin_theta = sqrt(1. - cos_theta * cos_theta);
         if(etai_over_etat * sin_theta > 1) {
             vec3 reflected = reflect(normalize(r.d), rc.n);
             scattered = Ray(rc.p, reflected);
-            return true;    
+            return true;
         }
 
         float reflect_prob = schlick(cos_theta, etai_over_etat);
@@ -326,12 +373,12 @@ bool scatter(Ray r, HitRecord rc, out vec3 attenuation, out Ray scattered)
         vec3 refracted = refract(normalize(r.d), rc.n, etai_over_etat);
         scattered = Ray(rc.p, refracted);
         return true;
+    } else if(materials[rc.m].type == DIFFUSE_LIGHT) {
+        return false;
     }
-
-    return false;
 }
 
-vec3 ray_color(Ray r_in, int depth)
+vec3 ray_color(Ray r_in, vec3 background, int depth)
 {
     vec3 final = vec3(1);
     Ray r = r_in;
@@ -341,22 +388,38 @@ vec3 ray_color(Ray r_in, int depth)
         if(depth <= 0) {
             return vec3(0);
         }
-        if(hit_scene(r, rc)) {
-            Ray scattered;
-            vec3 attenuation;
-            if(scatter(r, rc, attenuation, scattered)) {
-                final *= attenuation;
-                r = scattered;
-            }   
-            depth--;
-        } else {
-            float t = .5 * (r.d.y + 1.);
-            final *= (1. - t) * vec3(1) + t * vec3(.5, .7, 1.);
-            return final;
+//        if(hit_scene(r, rc)) {
+//            Ray scattered;
+//            vec3 attenuation;
+//            if(scatter(r, rc, attenuation, scattered)) {
+//                final *= attenuation;
+//                r = scattered;
+//            }
+//            depth--;
+//        } else {
+//            float t = .5 * (r.d.y + 1.);
+//            final *= (1. - t) * vec3(1) + t * vec3(.5, .7, 1.);
+//            return final;
+//        }
+
+        if(!hit_scene(r, rc)) {
+            return background;
         }
+
+        Ray scattered;
+        vec3 attenuation;
+        vec3 emitted = emitted(materials[rc.m], rc.u, rc.v, rc.p);
+
+        if(!scatter(r, rc, attenuation, scattered)) {
+            return final * emitted;
+        }
+
+        r = scattered;
+        depth--;
+        final *= emitted + attenuation;
     }
 
-    return final;
+    return vec3(0);
 }
 
 Camera new_camera(
@@ -404,6 +467,7 @@ void main()
 
     vec3 lookfrom = vec3(0, 0, 0);
     vec3 lookat = vec3(0, 0, -3);
+    vec3 background = vec3(0);
 
     Camera cam = new_camera(
         lookfrom, lookat,
@@ -412,15 +476,13 @@ void main()
     );
 
     g_seed = float(base_hash(floatBitsToUint(vec2(coords))))/float(0xffffffffU)+utime;
-
-    const int DEPTH = 100, SAMPLES = 5;
     
     vec3 pixel;
     for(int i = 0; i < SAMPLES; i++) {
         vec2 uv = (coords + hash2(g_seed)) / vec2(uwidth, uheight);
         Ray r = get_camera_ray(cam, uv);
         pixel += vec3(
-            ray_color(r, DEPTH)
+            ray_color(r, background, DEPTH)
         );
     }
 
