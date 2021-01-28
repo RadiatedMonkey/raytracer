@@ -7,6 +7,9 @@
 #include "window.h"
 #include "shader.h"
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
 struct buffers {
     GLuint vao, vbo;
 };
@@ -15,6 +18,7 @@ static GLint timeloc;
 static GLint widthloc;
 static GLint heightloc;
 static GLuint screenTexture;
+static GLuint earthtexture;
 static GLuint computeprogram;
 
 static int windowWidth;
@@ -37,6 +41,28 @@ inline GLuint createScreenTexture(int width, int height)
     glBindImageTexture(0, screenTexture, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
 
     return screenTexture;
+}
+
+inline GLuint uploadTexture(const char* filename) {
+    int width, height, nrChannels;
+    unsigned char* data = stbi_load(filename, &width, &height, &nrChannels, 0);
+    if(data == NULL) {
+        fprintf(stderr, "Failed to load %s\n", filename);
+        return 0;
+    }
+
+    GLuint texture;
+    glGenTextures(1, &texture);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
+
+    stbi_image_free(data);
+    return texture;
 }
 
 inline struct buffers createBuffers()
@@ -107,7 +133,7 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
     }
 }
 
-int main(int argc, char** argv)
+int main(void)
 {
     GLFWwindow* window = windowCreate(800, 600, "Window", true);
 
@@ -117,6 +143,14 @@ int main(int argc, char** argv)
     glfwGetWindowSize(window, &windowWidth, &windowHeight);
 
     createComputeProgram();
+    earthtexture = uploadTexture("../../textures/earthmap.jpg");
+    if(earthtexture == 0) {
+        glDeleteProgram(computeprogram);
+        glfwTerminate();
+        return 1;
+    }
+
+    glUniform1i(glGetUniformLocation(computeprogram, "earthtexture"), 1);
 
     GLuint quadprogram;
     {

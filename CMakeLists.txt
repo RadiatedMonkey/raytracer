@@ -14,6 +14,7 @@ add_executable(
 
     include/window.h
     include/shader.h
+    include/stb_image.h
 )
 
 add_subdirectory(lib/glfw)

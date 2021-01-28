@@ -1,4 +1,5 @@
 #version 430 core
+#extension GL_ARB_bindless_texture : enable
 
 layout(local_size_x = 8, local_size_y = 8) in;
 layout(rgba32f, binding = 0) uniform image2D framebuffer;
@@ -6,6 +7,8 @@ layout(rgba32f, binding = 0) uniform image2D framebuffer;
 uniform float utime;
 uniform float uwidth;
 uniform float uheight;
+
+layout(binding = 1) uniform sampler2D earthtexture;
 
 #define FOV 90.0
 #define PI 3.1415926
@@ -18,6 +21,7 @@ uniform float uheight;
 // Textures
 #define SOLID_COLOR 0
 #define CHECKERED 1
+#define IMAGE 2
 
 float atan2(in float y, in float x)
 {
@@ -50,8 +54,8 @@ struct Texture
     uint type; // Texture type
     vec3 albedo; // Color for normal textures
 
-    uint odd; // Texture for odd blocks when checkered
-    uint even; // Texture for even blocks when checkered
+    uint property1; // Texture for odd blocks when checkered or image when image texture
+    uint property2; // Texture for even blocks when checkered
 };
 
 struct Material
@@ -73,18 +77,22 @@ struct Camera
     vec3 origin, lower_left_corner, horizontal, vertical;
 };
 
+sampler2D images[] = sampler2D[](
+    earthtexture
+);
 
 Texture textures[] = Texture[](
     Texture(CHECKERED, vec3(1), 1, 2),
     Texture(SOLID_COLOR, vec3(0.9), 0, 0),
-    Texture(SOLID_COLOR, vec3(1.0, 0.7, 0.5), 0, 0)
+    Texture(SOLID_COLOR, vec3(1.0, 0.7, 0.5), 0, 0),
+    Texture(IMAGE, vec3(1), 0, 0)
 );
 
 Material materials[] = Material[](
     Material(DIELECTRIC, 1, 1.5),
-    Material(DIFFUSE, 2, 0.5),
-    Material(METAL, 1, 0.5),
-    Material(DIFFUSE, 0, 0)
+    Material(DIFFUSE, 3, 0.0),
+    Material(METAL, 1, 0.25),
+    Material(DIFFUSE, 0, 1.1)
 );
 
 Sphere spheres[] = Sphere[](
@@ -96,18 +104,8 @@ Sphere spheres[] = Sphere[](
 
 void get_sphere_uv(in vec3 p, inout HitRecord rc)
 {
-    float theta = acos(-p.y);
-    float phi = atan2(-p.z, p.x) + PI;
-
-    rc.u = phi / (2 * PI);
-    rc.v = theta / PI;
-}
-
-vec3 get_texture_color_value_inner(in Texture texture) {
-    if(texture.type == SOLID_COLOR) {
-        return texture.albedo;
-    }
-    return vec3(0);
+    rc.u = 0.5 - atan(-p.z, p.x) / (2 * PI);
+    rc.v = 0.5 - asin(-p.y) / PI;
 }
 
 vec3 get_texture_color_value(in Texture texture, in float u, in float v, in vec3 p) {
@@ -115,20 +113,25 @@ vec3 get_texture_color_value(in Texture texture, in float u, in float v, in vec3
         return texture.albedo;
     } else if(texture.type == CHECKERED) {
         float sines = sin(10 * p.x) * sin(10 * p.y) * sin(10 * p.z);
-        if(sines < 0) {
-            if(textures[texture.odd].type == SOLID_COLOR) {
-                return textures[texture.odd].albedo;
+        if (sines < 0) {
+            if (textures[texture.property1].type == SOLID_COLOR) {
+                return textures[texture.property1].albedo;
             } else {
                 return vec3(0);
             }
         } else {
-            if(textures[texture.even].type == SOLID_COLOR) {
-                return textures[texture.even].albedo;
+            if (textures[texture.property2].type == SOLID_COLOR) {
+                return textures[texture.property2].albedo;
             } else {
                 return vec3(0);
             }
         }
-    } else {
+    } else if(texture.type == IMAGE) {
+        u = 1.0 - clamp(u, 0, 1);
+        v = 1.0 - clamp(v, 0, 1);
+
+        return texture2D(images[texture.property1], vec2(u, v)).xyz;
+   } else {
         return vec3(0);
     }
 }
@@ -168,7 +171,7 @@ vec3 hash3(inout float seed)
 
 vec3 random_in_unit_sphere(inout float seed)
 {
-    vec3 h = hash3(seed) * vec3(2.0, 6.28318530718, 1.0)-vec3(1,0,0);
+    vec3 h = hash3(seed) * vec3(2.0, 6.28318530718, 1.0) - vec3(1,0,0);
     float phi = h.y;
     float r = pow(h.z, 1.0 / 3.0);
 	return r * vec3(sqrt(1.0 - h.x * h.x) * vec2(sin(phi), cos(phi)), h.x);
@@ -399,7 +402,7 @@ void main()
 {
     ivec2 coords = ivec2(gl_GlobalInvocationID.xy);
 
-    vec3 lookfrom = vec3(0, 1, 0);
+    vec3 lookfrom = vec3(0, 0, 0);
     vec3 lookat = vec3(0, 0, -3);
 
     Camera cam = new_camera(
