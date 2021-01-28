@@ -16,6 +16,9 @@ uniform float uheight;
 #define METAL 1
 #define DIELECTRIC 2
 
+// Textures
+#define SOLID_COLOR 0
+
 float atan2(in float y, in float x) {
     bool s = (abs(x) > abs(y));
     return mix(PI / 2.0 - atan(x, y), atan(y, x), s);
@@ -39,9 +42,14 @@ HitRecord set_face_normal(HitRecord rc, Ray r, vec3 n)
     return rc;
 }
 
-struct Material {
-    int type;
+struct Texture {
+    uint type;
     vec3 albedo;
+};
+
+struct Material {
+    uint type;
+    uint texture;
     float property;
 };
 
@@ -170,11 +178,17 @@ bool hit_sphere(Sphere s, Ray r, float tMin, float tMax, out HitRecord rec)
     return false;
 }
 
+Texture textures[] = Texture[](
+    Texture(SOLID_COLOR, vec3(1)),
+    Texture(SOLID_COLOR, vec3(0.9)),
+    Texture(SOLID_COLOR, vec3(1.0, 0.7, 0.5))
+);
+
 Material materials[] = Material[](
-    Material(DIELECTRIC, vec3(1), 1.5),
-    Material(METAL, vec3(0.9), 0.5),
-    Material(DIFFUSE, vec3(1.0, 0.7, 0.5), 0),
-    Material(DIFFUSE, vec3(1), 0)
+    Material(DIELECTRIC, 0, 1.5),
+    Material(METAL, 1, 0.5),
+    Material(DIFFUSE, 2, 0),
+    Material(DIFFUSE, 0, 0)
 );
 
 Sphere spheres[] = Sphere[](
@@ -227,12 +241,12 @@ bool scatter(Ray r, HitRecord rc, out vec3 attenuation, out Ray scattered)
     if(materials[rc.material].type == DIFFUSE) {
         vec3 scatter_direction = rc.n + random_unit_vector(g_seed);
         scattered = Ray(rc.p, scatter_direction);
-        attenuation = materials[rc.material].albedo;
+        attenuation = textures[materials[rc.material].texture].albedo;
         return true;
     } else if(materials[rc.material].type == METAL) {
         vec3 reflected = reflect(normalize(r.d), rc.n);
         scattered = Ray(rc.p, reflected + materials[rc.material].property * random_in_unit_sphere(g_seed));
-        attenuation = materials[rc.material].albedo;
+        attenuation = textures[materials[rc.material].texture].albedo;
         return dot(scattered.d, rc.n) > 0;
     } else if(materials[rc.material].type == DIELECTRIC) {
         attenuation = vec3(1);
