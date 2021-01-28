@@ -7,7 +7,6 @@ uniform float utime;
 uniform float uwidth;
 uniform float uheight;
 
-
 #define FOV 90.0
 #define PI 3.1415926
 
@@ -18,17 +17,21 @@ uniform float uheight;
 
 // Textures
 #define SOLID_COLOR 0
+#define CHECKERED 1
 
-float atan2(in float y, in float x) {
+float atan2(in float y, in float x)
+{
     bool s = (abs(x) > abs(y));
     return mix(PI / 2.0 - atan(x, y), atan(y, x), s);
 }
 
-struct Ray {
+struct Ray
+{
     vec3 o, d;
 };
 
-struct HitRecord {
+struct HitRecord
+{
     vec3 p, n;
     float t, u, v;
     bool frontFace;
@@ -42,29 +45,92 @@ HitRecord set_face_normal(HitRecord rc, Ray r, vec3 n)
     return rc;
 }
 
-struct Texture {
-    uint type;
-    vec3 albedo;
+struct Texture
+{
+    uint type; // Texture type
+    vec3 albedo; // Color for normal textures
+
+    uint odd; // Texture for odd blocks when checkered
+    uint even; // Texture for even blocks when checkered
 };
 
-struct Material {
+struct Material
+{
     uint type;
     uint texture;
     float property;
 };
 
-struct Sphere {
+struct Sphere
+{
     vec3 c;
     float r;
     uint material;
 };
 
-void get_sphere_uv(in vec3 p, inout HitRecord rc) {
+struct Camera
+{
+    vec3 origin, lower_left_corner, horizontal, vertical;
+};
+
+
+Texture textures[] = Texture[](
+    Texture(CHECKERED, vec3(1), 1, 2),
+    Texture(SOLID_COLOR, vec3(0.9), 0, 0),
+    Texture(SOLID_COLOR, vec3(1.0, 0.7, 0.5), 0, 0)
+);
+
+Material materials[] = Material[](
+    Material(DIELECTRIC, 1, 1.5),
+    Material(DIFFUSE, 2, 0.5),
+    Material(METAL, 1, 0.5),
+    Material(DIFFUSE, 0, 0)
+);
+
+Sphere spheres[] = Sphere[](
+    Sphere(vec3(0, 0, -3), 1, 0),
+    Sphere(vec3(2, 0, -3), 1, 2),
+    Sphere(vec3(-2, 0, -3), 1, 1),
+    Sphere(vec3(0, -1001, 0), 1000, 3)
+);
+
+void get_sphere_uv(in vec3 p, inout HitRecord rc)
+{
     float theta = acos(-p.y);
     float phi = atan2(-p.z, p.x) + PI;
 
     rc.u = phi / (2 * PI);
     rc.v = theta / PI;
+}
+
+vec3 get_texture_color_value_inner(in Texture texture) {
+    if(texture.type == SOLID_COLOR) {
+        return texture.albedo;
+    }
+    return vec3(0);
+}
+
+vec3 get_texture_color_value(in Texture texture, in float u, in float v, in vec3 p) {
+    if(texture.type == SOLID_COLOR) {
+        return texture.albedo;
+    } else if(texture.type == CHECKERED) {
+        float sines = sin(10 * p.x) * sin(10 * p.y) * sin(10 * p.z);
+        if(sines < 0) {
+            if(textures[texture.odd].type == SOLID_COLOR) {
+                return textures[texture.odd].albedo;
+            } else {
+                return vec3(0);
+            }
+        } else {
+            if(textures[texture.even].type == SOLID_COLOR) {
+                return textures[texture.even].albedo;
+            } else {
+                return vec3(0);
+            }
+        }
+    } else {
+        return vec3(0);
+    }
 }
 
 float length_squared(vec3 v)
@@ -80,24 +146,28 @@ uint base_hash(uvec2 p) {
 
 float g_seed = 0.0;
 
-float hash1(inout float seed) {
+float hash1(inout float seed)
+{
     uint n = base_hash(floatBitsToUint(vec2(seed += 0.1, seed += 0.1)));
     return float(n) / float(0xffffffffU);
 }
 
-vec2 hash2(inout float seed) {
+vec2 hash2(inout float seed)
+{
     uint n = base_hash(floatBitsToUint(vec2(seed += 0.1, seed += 0.1)));
     uvec2 rz = uvec2(n, n * 48271U);
     return vec2(rz.xy & uvec2(0x7fffffffU)) / float(0x7fffffff);
 }
 
-vec3 hash3(inout float seed) {
+vec3 hash3(inout float seed)
+{
     uint n = base_hash(floatBitsToUint(vec2(seed += 0.1, seed += 0.1)));
     uvec3 rz = uvec3(n, n * 16807U, n * 48271U);
     return vec3(rz & uvec3(0x7fffffffU)) / float(0x7fffffff);
 }
 
-vec3 random_in_unit_sphere(inout float seed) {
+vec3 random_in_unit_sphere(inout float seed)
+{
     vec3 h = hash3(seed) * vec3(2.0, 6.28318530718, 1.0)-vec3(1,0,0);
     float phi = h.y;
     float r = pow(h.z, 1.0 / 3.0);
@@ -122,7 +192,8 @@ vec3 random_in_hemisphere(inout float seed, vec3 normal)
     }
 }
 
-vec3 random_in_unit_disk(inout float seed) {
+vec3 random_in_unit_disk(inout float seed)
+{
     while(true) {
         vec3 p = vec3(hash1(seed) * 2 - 1, hash1(seed) * 2 - 1, 0);
         if(length_squared(p) >= 1) continue;
@@ -170,6 +241,7 @@ bool hit_sphere(Sphere s, Ray r, float tMin, float tMax, out HitRecord rec)
             
             vec3 n = (rec.p - s.c) / s.r;
             rec = set_face_normal(rec, r, n);
+            get_sphere_uv(n, rec);
 
             return true;
         }
@@ -178,27 +250,8 @@ bool hit_sphere(Sphere s, Ray r, float tMin, float tMax, out HitRecord rec)
     return false;
 }
 
-Texture textures[] = Texture[](
-    Texture(SOLID_COLOR, vec3(1)),
-    Texture(SOLID_COLOR, vec3(0.9)),
-    Texture(SOLID_COLOR, vec3(1.0, 0.7, 0.5))
-);
-
-Material materials[] = Material[](
-    Material(DIELECTRIC, 0, 1.5),
-    Material(METAL, 1, 0.5),
-    Material(DIFFUSE, 2, 0),
-    Material(DIFFUSE, 0, 0)
-);
-
-Sphere spheres[] = Sphere[](
-    Sphere(vec3(0, 0, -3), 1, 0),
-    Sphere(vec3(2, 0, -3), 1, 2),
-    Sphere(vec3(-2, 0, -3), 1, 1),
-    Sphere(vec3(0, -1001, 0), 1000, 3)
-);
-
-bool hit_scene(Ray r, out HitRecord rc) {
+bool hit_scene(Ray r, out HitRecord rc)
+{
     bool hitAnything = false;
     float closest = 10000.0;
 
@@ -241,12 +294,12 @@ bool scatter(Ray r, HitRecord rc, out vec3 attenuation, out Ray scattered)
     if(materials[rc.material].type == DIFFUSE) {
         vec3 scatter_direction = rc.n + random_unit_vector(g_seed);
         scattered = Ray(rc.p, scatter_direction);
-        attenuation = textures[materials[rc.material].texture].albedo;
+        attenuation = get_texture_color_value(textures[materials[rc.material].texture], rc.u, rc.v, rc.p);
         return true;
     } else if(materials[rc.material].type == METAL) {
         vec3 reflected = reflect(normalize(r.d), rc.n);
         scattered = Ray(rc.p, reflected + materials[rc.material].property * random_in_unit_sphere(g_seed));
-        attenuation = textures[materials[rc.material].texture].albedo;
+        attenuation = get_texture_color_value(textures[materials[rc.material].texture], rc.u, rc.v, rc.p);
         return dot(scattered.d, rc.n) > 0;
     } else if(materials[rc.material].type == DIELECTRIC) {
         attenuation = vec3(1);
@@ -303,10 +356,6 @@ vec3 ray_color(Ray r_in, int depth)
     return final;
 }
 
-struct Camera {
-    vec3 origin, lower_left_corner, horizontal, vertical;
-};
-
 Camera new_camera(
     vec3 lookfrom, vec3 lookat, vec3 vup,
     float vfov, float aspect_ratio
@@ -346,10 +395,11 @@ void gamma_correct(inout vec4 px, int samples)
     px.z = clamp(scale * px.z, 0, 1);
 }
 
-void main() {
+void main()
+{
     ivec2 coords = ivec2(gl_GlobalInvocationID.xy);
 
-    vec3 lookfrom = vec3(-2, 1, 0);
+    vec3 lookfrom = vec3(0, 1, 0);
     vec3 lookat = vec3(0, 0, -3);
 
     Camera cam = new_camera(
