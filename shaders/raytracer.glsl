@@ -10,12 +10,16 @@ uniform float uheight;
 
 #define FOV 90.0
 #define PI 3.1415926
-#define AMBIENT_LIGHT 0.5
 
 // Materials
 #define DIFFUSE 0
 #define METAL 1
 #define DIELECTRIC 2
+
+float atan2(in float y, in float x) {
+    bool s = (abs(x) > abs(y));
+    return mix(PI / 2.0 - atan(x, y), atan(y, x), s);
+}
 
 struct Ray {
     vec3 o, d;
@@ -23,12 +27,11 @@ struct Ray {
 
 struct HitRecord {
     vec3 p, n;
-    float t;
+    float t, u, v;
     bool frontFace;
     vec3 albedo;
     int material;
-    float roughness;
-    float ref_idx;
+    float material_property; // Roughness and refractive index
 };
 
 HitRecord set_face_normal(HitRecord rc, Ray r, vec3 n)
@@ -43,45 +46,52 @@ struct Sphere {
     float r;
     int material;
     vec3 albedo;
-    float roughness;
-    float ref_idx;
+    float material_property;
 };
+
+void get_sphere_uv(in vec3 p, inout HitRecord rc) {
+    float theta = acos(-p.y);
+    float phi = atan2(-p.z, p.x) + PI;
+
+    rc.u = phi / (2 * PI);
+    rc.v = theta / PI;
+}
 
 float length_squared(vec3 v)
 {
-    return v.x*v.x+v.y*v.y+v.z*v.z;
+    return v.x * v.x + v.y * v.y + v.z * v.z;
 }
 
 uint base_hash(uvec2 p) {
-    p = 1103515245U*((p >> 1U)^(p.yx));
-    uint h32 = 1103515245U*((p.x)^(p.y>>3U));
-    return h32^(h32 >> 16);
+    p = 1103515245U * ((p >> 1U) ^ (p.yx));
+    uint h32 = 1103515245U * ((p.x) ^ (p.y >> 3U));
+    return h32 ^ (h32 >> 16);
 }
 
-float g_seed = 0.;
+float g_seed = 0.0;
 
 float hash1(inout float seed) {
-    uint n = base_hash(floatBitsToUint(vec2(seed+=.1,seed+=.1)));
-    return float(n)/float(0xffffffffU);
+    uint n = base_hash(floatBitsToUint(vec2(seed += 0.1, seed += 0.1)));
+    return float(n) / float(0xffffffffU);
 }
 
 vec2 hash2(inout float seed) {
-    uint n = base_hash(floatBitsToUint(vec2(seed+=.1,seed+=.1)));
-    uvec2 rz = uvec2(n, n*48271U);
-    return vec2(rz.xy & uvec2(0x7fffffffU))/float(0x7fffffff);
+    uint n = base_hash(floatBitsToUint(vec2(seed += 0.1, seed += 0.1)));
+    uvec2 rz = uvec2(n, n * 48271U);
+    return vec2(rz.xy & uvec2(0x7fffffffU)) / float(0x7fffffff);
 }
 
 vec3 hash3(inout float seed) {
-    uint n = base_hash(floatBitsToUint(vec2(seed+=.1,seed+=.1)));
-    uvec3 rz = uvec3(n, n*16807U, n*48271U);
-    return vec3(rz & uvec3(0x7fffffffU))/float(0x7fffffff);
+    uint n = base_hash(floatBitsToUint(vec2(seed += 0.1, seed += 0.1)));
+    uvec3 rz = uvec3(n, n * 16807U, n * 48271U);
+    return vec3(rz & uvec3(0x7fffffffU)) / float(0x7fffffff);
 }
 
 vec3 random_in_unit_sphere(inout float seed) {
-    vec3 h = hash3(seed) * vec3(2.,6.28318530718,1.)-vec3(1,0,0);
+    vec3 h = hash3(seed) * vec3(2.0, 6.28318530718, 1.0)-vec3(1,0,0);
     float phi = h.y;
-    float r = pow(h.z, 1./3.);
-	return r * vec3(sqrt(1.-h.x*h.x)*vec2(sin(phi),cos(phi)),h.x);
+    float r = pow(h.z, 1.0 / 3.0);
+	return r * vec3(sqrt(1.0 - h.x * h.x) * vec2(sin(phi), cos(phi)), h.x);
 }
 
 vec3 random_unit_vector(inout float seed)
@@ -95,11 +105,27 @@ vec3 random_unit_vector(inout float seed)
 vec3 random_in_hemisphere(inout float seed, vec3 normal)
 {
     vec3 in_unit_sphere = random_in_unit_sphere(seed);
-    if(dot(in_unit_sphere, normal) > 0.) {
+    if(dot(in_unit_sphere, normal) > 0.0) {
         return in_unit_sphere;
     } else {
         return -in_unit_sphere;
     }
+}
+
+vec3 random_in_unit_disk(inout float seed) {
+    while(true) {
+        vec3 p = vec3(hash1(seed) * 2 - 1, hash1(seed) * 2 - 1, 0);
+        if(length_squared(p) >= 1) continue;
+        return p;
+    }
+
+    return vec3(0);
+}
+
+bool near_zero(in vec3 point)
+{
+    const float s = 1e-8;
+    return (abs(point.x) < s) && (abs(point.y) < s) && (abs(point.z) < s);
 }
 
 bool hit_sphere(Sphere s, Ray r, float tMin, float tMax, out HitRecord rec)
@@ -119,11 +145,11 @@ bool hit_sphere(Sphere s, Ray r, float tMin, float tMax, out HitRecord rec)
             rec.p = r.o + r.d * tmp;
             rec.material = s.material;
             rec.albedo = s.albedo;
-            rec.roughness = s.roughness;
-            rec.ref_idx = s.ref_idx;
+            rec.material_property = s.material_property;
 
             vec3 n = (rec.p - s.c) / s.r;
             rec = set_face_normal(rec, r, n);
+            get_sphere_uv(n, rec);
 
             return true;
         }
@@ -134,8 +160,7 @@ bool hit_sphere(Sphere s, Ray r, float tMin, float tMax, out HitRecord rec)
             rec.p = r.o + r.d * tmp;
             rec.material = s.material;
             rec.albedo = s.albedo;
-            rec.roughness = s.roughness;
-            rec.ref_idx = s.ref_idx;
+            rec.material_property = s.material_property;
             
             vec3 n = (rec.p - s.c) / s.r;
             rec = set_face_normal(rec, r, n);
@@ -148,26 +173,17 @@ bool hit_sphere(Sphere s, Ray r, float tMin, float tMax, out HitRecord rec)
 }
 
 Sphere spheres[] = Sphere[](
-    Sphere(
-        vec3(2, 0, -4), 1.0, METAL, vec3(0.75, 0.5, 0.5), 0, 0
-    ),
-    Sphere(
-        vec3(-1.5, 0, -5), 1.0, METAL, vec3(0.5, 0.5, 0.75), 0.25, 0
-    ),
-    Sphere(
-        vec3(0, 0, -4), 1.0, DIELECTRIC, vec3(0.75, 0.75, 0.75), 0, 1.5
-    ),
-    Sphere(
-        vec3(1, 1, -7), 2.0, METAL, vec3(0.5, 0.75, 0.75), 0, 0
-    ),
-    Sphere(vec3(0, -101, 0), 100, DIFFUSE, vec3(1., 1., 1.), 0, 0)
+    Sphere(vec3(0, 0, -3), 1, DIELECTRIC, vec3(1, 0.5, 0.25), 1.2),
+    Sphere(vec3(2, 0, -3), 1, DIFFUSE, vec3(1.0, 0.7, 0.5), 0),
+    Sphere(vec3(-2, 0, -3), 1, METAL, vec3(0.9, 0.9, 0.9), 0.5),
+    Sphere(vec3(0, -1001, 0), 1000, DIFFUSE, vec3(1.0), 0)
 );
 
 bool hit_scene(Ray r, out HitRecord rc) {
     bool hitAnything = false;
     float closest = 10000.0;
 
-    for(int i = 0; i < 5; i++) {
+    for(int i = 0; i < spheres.length(); i++) {
         if(hit_sphere(spheres[i], r, 0.001, closest, rc)) {
             hitAnything = true;
             closest = rc.t;
@@ -199,10 +215,9 @@ vec3 refract(vec3 uv, vec3 n, float etai_over_etat)
 
 bool scatter(Ray r, HitRecord rc, out vec3 attenuation, out Ray scattered)
 {
-    // vec3 scatter_direction = rc.n + random_unit_vector(g_seed);
-    // scattered = Ray(rec.p, scatter_direction);
-    // attenuation = s.albedo;
-    // return true;
+    if(near_zero(r.d)) {
+        return false;
+    }
 
     if(rc.material == DIFFUSE) {
         vec3 scatter_direction = rc.n + random_unit_vector(g_seed);
@@ -211,12 +226,12 @@ bool scatter(Ray r, HitRecord rc, out vec3 attenuation, out Ray scattered)
         return true;
     } else if(rc.material == METAL) {
         vec3 reflected = reflect(normalize(r.d), rc.n);
-        scattered = Ray(rc.p, reflected + rc.roughness * random_in_unit_sphere(g_seed));
+        scattered = Ray(rc.p, reflected + rc.material_property * random_in_unit_sphere(g_seed));
         attenuation = rc.albedo;
         return dot(scattered.d, rc.n) > 0;
     } else if(rc.material == DIELECTRIC) {
         attenuation = vec3(1);
-        float etai_over_etat = rc.frontFace ? (1. / rc.ref_idx) : rc.ref_idx;
+        float etai_over_etat = rc.frontFace ? (1. / rc.material_property) : rc.material_property;
 
         float cos_theta = min(dot(-normalize(r.d), rc.n), 1.);
         float sin_theta = sqrt(1. - cos_theta * cos_theta);
@@ -252,12 +267,6 @@ vec3 ray_color(Ray r_in, int depth)
             return vec3(0);
         }
         if(hit_scene(r, rc)) {
-            // vec3 target = rc.p + random_in_hemisphere(g_seed, rc.n);
-            // r = Ray(rc.p, target - rc.p);
-            // depth--;
-            // final *= .5;
-            // // final += AMBIENT_LIGHT;
-
             Ray scattered;
             vec3 attenuation;
             if(scatter(r, rc, attenuation, scattered)) {
@@ -304,55 +313,38 @@ Camera new_camera(
 
 Ray get_camera_ray(Camera c, vec2 uv)
 {
-    // return Ray(
-    //     c.origin,
-    //     c.lower_left_corner + uv.x * c.horizontal + uv.y * c.vertical - c.origin
-    // );
     return Ray(
         c.origin,
         c.lower_left_corner + uv.x * c.horizontal + uv.y * c.vertical - c.origin
     );
 }
 
-// Ray get_camera_ray(vec2 c)
-// {
-//     float u = (uwidth / uheight) * (2. * c.x / uwidth - 1);
-//     float v = (2. * c.y / uheight - 1);
-
-//     const float fovFactor = 1. / tan(FOV / 2.);
-
-//     return Ray(
-//         vec3(0), vec3(u, v, fovFactor)
-//     );
-// }
-
-vec3 gamma_correct(vec3 px, int samples)
+void gamma_correct(inout vec4 px, int samples)
 {
-    float scale = 1. / samples;
-    px.x = sqrt(scale * px.x);
-    px.y = sqrt(scale * px.y);
-    px.z = sqrt(scale * px.z);
-    return px;
+    float scale = 1.0 / samples;
+    px.x = clamp(scale * px.x, 0, 1);
+    px.y = clamp(scale * px.y, 0, 1);
+    px.z = clamp(scale * px.z, 0, 1);
 }
 
 void main() {
     ivec2 coords = ivec2(gl_GlobalInvocationID.xy);
+
+    vec3 lookfrom = vec3(-2, 1, 0);
+    vec3 lookat = vec3(0, 0, -3);
+
     Camera cam = new_camera(
-        vec3(-3, 2, -1), vec3(0, 0, -5),
+        lookfrom, lookat,
         vec3(0, 1, 0),    
-        90., uwidth / uheight
+        90, uwidth / uheight
     );
 
     g_seed = float(base_hash(floatBitsToUint(vec2(coords))))/float(0xffffffffU)+utime;
 
-    const int DEPTH = 100, SAMPLES = 100;
+    const int DEPTH = 100, SAMPLES = 5;
     
     vec3 pixel;
     for(int i = 0; i < SAMPLES; i++) {
-        // vec2 ircoords = vec2(
-        //     coords.x + hash1(g_seed),
-        //     coords.y + hash1(g_seed)
-        // );
         vec2 uv = (coords + hash2(g_seed)) / vec2(uwidth, uheight);
         Ray r = get_camera_ray(cam, uv);
         pixel += vec3(
@@ -360,8 +352,10 @@ void main() {
         );
     }
 
-    pixel /= SAMPLES;
-    vec4 final = (vec4(pixel, 1.0) + imageLoad(framebuffer, coords)) / 2.;
+    vec4 final = vec4(pixel, 1);
+    gamma_correct(final, SAMPLES);
+
+    final = final * 0.01 + imageLoad(framebuffer, coords) * 0.99;
 
     imageStore(framebuffer, coords, final);
 }
