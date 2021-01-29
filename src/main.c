@@ -18,7 +18,9 @@ static GLint timeloc;
 static GLint widthloc;
 static GLint heightloc;
 static GLuint screenTexture;
-static GLuint earthtexture;
+static GLuint texture1;
+static GLuint texture2;
+static GLuint texture3;
 static GLuint computeprogram;
 
 static int windowWidth;
@@ -43,7 +45,7 @@ inline GLuint createScreenTexture(int width, int height)
     return screenTexture;
 }
 
-inline GLuint uploadTexture(const char* filename) {
+inline GLuint uploadTexture(const char* filename, GLuint textureID) {
     int width, height, nrChannels;
     unsigned char* data = stbi_load(filename, &width, &height, &nrChannels, 0);
     if(data == NULL) {
@@ -53,7 +55,7 @@ inline GLuint uploadTexture(const char* filename) {
 
     GLuint texture;
     glGenTextures(1, &texture);
-    glActiveTexture(GL_TEXTURE1);
+    glActiveTexture(textureID);
     glBindTexture(GL_TEXTURE_2D, texture);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
@@ -143,14 +145,29 @@ int main(void)
     glfwGetWindowSize(window, &windowWidth, &windowHeight);
 
     createComputeProgram();
-    earthtexture = uploadTexture("../../textures/earthmap.jpg");
-    if(earthtexture == 0) {
+    texture1 = uploadTexture("../../textures/texture1.jpg", GL_TEXTURE1);
+    if(texture1 == 0) {
         glDeleteProgram(computeprogram);
         glfwTerminate();
         return 1;
     }
 
-    glUniform1i(glGetUniformLocation(computeprogram, "earthtexture"), 1);
+    texture2 = uploadTexture("../../textures/texture2.jpg", GL_TEXTURE2);
+    if(texture2 == 0) {
+        glDeleteProgram(computeprogram);
+        glDeleteTextures(1, &texture1);
+        glfwTerminate();
+        return 1;
+    }
+
+    texture3 = uploadTexture("../../textures/texture3.jpg", GL_TEXTURE3);
+    if(texture3 == 0) {
+        glDeleteProgram(computeprogram);
+        glDeleteTextures(1, &texture1);
+        glDeleteTextures(1, &texture2);
+        glfwTerminate();
+        return 1;
+    }
 
     GLuint quadprogram;
     {
@@ -196,7 +213,8 @@ int main(void)
     glDeleteVertexArrays(1, &bufs.vao);
     glDeleteBuffers(1, &bufs.vbo);
 
-    glDeleteTextures(1, &screenTexture);
+    GLuint textures[] = { screenTexture, texture1, texture2, texture3 };
+    glDeleteTextures(4, textures);
 
     glDeleteProgram(computeprogram);
     glDeleteProgram(quadprogram);

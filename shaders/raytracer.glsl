@@ -8,7 +8,9 @@ uniform float utime;
 uniform float uwidth;
 uniform float uheight;
 
-layout(binding = 1) uniform sampler2D earthtexture;
+layout(binding = 1) uniform sampler2D texture1;
+layout(binding = 2) uniform sampler2D texture2;
+layout(binding = 3) uniform sampler2D texture3;
 
 #define FOV 90.0
 #define PI 3.1415926
@@ -87,32 +89,76 @@ struct Camera
 };
 
 sampler2D images[] = sampler2D[](
-    earthtexture
+    texture1,
+    texture2,
+    texture3
 );
+
+#if 0
 
 Texture textures[] = Texture[](
     Texture(CHECKERED, vec3(1), 1, 2),
-    Texture(SOLID_COLOR, vec3(0.9), 0, 0),
-    Texture(SOLID_COLOR, vec3(0.5, 0.7, 1.0), 0, 0),
-    Texture(IMAGE, vec3(1), 0, 0)
+    Texture(SOLID_COLOR, vec3(1.0, 0.75, 0.75), 0, 0),
+    Texture(SOLID_COLOR, vec3(0.5, 0.5, 0.75), 0, 0),
+    Texture(IMAGE, vec3(1), 0, 0),
+    Texture(IMAGE, vec3(1), 1, 0)
 );
 
 Material materials[] = Material[](
     Material(DIELECTRIC, 1, 1.5),
     Material(DIFFUSE, 3, 0.0),
-    Material(DIFFUSE_LIGHT, 2, 0.25),
-    Material(DIFFUSE, 0, 0)
+    Material(DIFFUSE_LIGHT, 1, 0.25),
+    Material(DIFFUSE, 0, 0),
+    Material(DIFFUSE_LIGHT, 2, 0),
+    Material(METAL, 1, 0.25),
+    Material(DIFFUSE, 4, 0),
+    Material(DIFFUSE, 1, 0)
 );
 
 Sphere spheres[] = Sphere[](
-    Sphere(vec3(0, 0, -3), 1, 0),
-    Sphere(vec3(2, 0, -3), 1, 2),
-    Sphere(vec3(-2, 0, -3), 1, 1),
-    Sphere(vec3(0, -1001, 0), 1000, 3)
+    Sphere(vec3(0, 0, -3), 1, 1),
+    Sphere(vec3(3, 0, -4), 1, 6),
+    Sphere(vec3(-2, 0, -4), 1, 0),
+    Sphere(vec3(2, 0, -2), 1, 5),
+    Sphere(vec3(-1.5, 0, -6), 1, 5),
+    Sphere(vec3(3, 0, -6), 1, 0),
+    Sphere(vec3(-1, 0, -1), 1, 7),
+    Sphere(vec3(0.5, 0, -5), 1, 7),
+    Sphere(vec3(0, -1001, -3), 1000, 5)
 );
 
 Rect rects[] = Rect[](
-    Rect(3, 5, 1, 3, -2, 3)
+    Rect(-7, 7, -20, 20, 3, 2),
+    Rect(-7, 7, -20, 20, -11, 4)
+);
+
+#endif
+
+Texture textures[] = Texture[](
+    Texture(SOLID_COLOR, vec3(1, 1, 1), 0, 0),
+    Texture(CHECKERED, vec3(0), 2, 3),
+    Texture(SOLID_COLOR, vec3(0.9), 0, 0),
+    Texture(SOLID_COLOR, vec3(0), 0, 0)
+);
+
+Material materials[] = Material[](
+    Material(DIFFUSE_LIGHT, 0, 0), // Emission
+    Material(DIFFUSE, 1, 0), // Ground
+    Material(DIELECTRIC, 0, 1.5), // Scene object 1
+    Material(METAL, 0, 0.0), // Scene object 2
+    Material(DIFFUSE, 0, 0) // Scene object 3
+);
+
+Sphere spheres[] = Sphere[](
+    Sphere(vec3(0, -1001, 0), 1000, 1), // Ground
+    Sphere(vec3(0, 0, 0), 1, 2), // Scene object 1
+    Sphere(vec3(-2, 0, 0), 1, 3), // Scene object 2
+    Sphere(vec3(2, 0, 0), 1, 4) // Scene object 3
+);
+
+Rect rects[] = Rect[](
+    Rect(-5, 5, 0, 2, -5, 0), // Light 1
+    Rect(-5, 5, 0, 2, 5, 0) // Light 2
 );
 
 void get_sphere_uv(in vec3 p, inout HitRecord rc)
@@ -129,12 +175,22 @@ vec3 get_texture_color_value(in Texture texture, in float u, in float v, in vec3
         if (sines < 0) {
             if (textures[texture.property1].type == SOLID_COLOR) {
                 return textures[texture.property1].albedo;
+            } else if(textures[texture.property1].type == IMAGE) {
+                u = 1.0 - clamp(u, 0, 1);
+                v = 1.0 - clamp(v, 0, 1);
+
+                return texture2D(images[textures[texture.property1].property1], vec2(u, v)).xyz;
             } else {
                 return vec3(0);
             }
         } else {
             if (textures[texture.property2].type == SOLID_COLOR) {
                 return textures[texture.property2].albedo;
+            } else if(textures[texture.property2].type == IMAGE) {
+                u = 1.0 - clamp(u, 0, 1);
+                v = 1.0 - clamp(v, 0, 1);
+
+                return texture2D(images[textures[texture.property2].property1], vec2(u, v)).xyz;
             } else {
                 return vec3(0);
             }
@@ -388,19 +444,6 @@ vec3 ray_color(Ray r_in, vec3 background, int depth)
         if(depth <= 0) {
             return vec3(0);
         }
-//        if(hit_scene(r, rc)) {
-//            Ray scattered;
-//            vec3 attenuation;
-//            if(scatter(r, rc, attenuation, scattered)) {
-//                final *= attenuation;
-//                r = scattered;
-//            }
-//            depth--;
-//        } else {
-//            float t = .5 * (r.d.y + 1.);
-//            final *= (1. - t) * vec3(1) + t * vec3(.5, .7, 1.);
-//            return final;
-//        }
 
         if(!hit_scene(r, rc)) {
             return background;
@@ -465,8 +508,10 @@ void main()
 {
     ivec2 coords = ivec2(gl_GlobalInvocationID.xy);
 
-    vec3 lookfrom = vec3(0, 0, 0);
-    vec3 lookat = vec3(0, 0, -3);
+    vec3 lookfrom = vec3(0, 1, -3);
+    vec3 lookat = vec3(0, 0, 0);
+//    vec3 lookfrom = vec3(sin(utime) * 4, -cos(utime) * 3 + 2, -sin(utime) * 2 - 8);
+//    vec3 lookat = vec3(-cos(utime) * 2, sin(utime) * 3, cos(utime) * 5);
     vec3 background = vec3(0);
 
     Camera cam = new_camera(
@@ -489,7 +534,7 @@ void main()
     vec4 final = vec4(pixel, 1);
     gamma_correct(final, SAMPLES);
 
-    final = final * 0.01 + imageLoad(framebuffer, coords) * 0.99;
+    final = final * 0.005 + imageLoad(framebuffer, coords) * 0.995;
 
     imageStore(framebuffer, coords, final);
 }
