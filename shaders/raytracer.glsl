@@ -26,7 +26,11 @@ layout(binding = 3) uniform sampler2D texture3;
 #define CHECKERED 1
 #define IMAGE 2
 
-const int DEPTH = 100, SAMPLES = 5;
+#define XY 0
+#define XZ 1
+#define YZ 2
+
+const int DEPTH = 100, SAMPLES = 10;
 
 float atan2(in float y, in float x)
 {
@@ -79,6 +83,7 @@ struct Sphere
 
 struct Rect
 {
+    uint p; // The plane this rectangle is put on (XY, XZ or YZ)
     float x0, x1, y0, y1, k;
     uint m;
 };
@@ -128,21 +133,24 @@ Sphere spheres[] = Sphere[](
 );
 
 Rect rects[] = Rect[](
-    Rect(-7, 7, -20, 20, 3, 2),
-    Rect(-7, 7, -20, 20, -11, 4)
+    Rect(XY, -7, 7, -20, 20, 3, 2),
+    Rect(XY, -7, 7, -20, 20, -11, 4)
 );
 
 #endif
+
+#if 0
 
 Texture textures[] = Texture[](
     Texture(SOLID_COLOR, vec3(1, 1, 1), 0, 0),
     Texture(CHECKERED, vec3(0), 2, 3),
     Texture(SOLID_COLOR, vec3(0.9), 0, 0),
-    Texture(SOLID_COLOR, vec3(0), 0, 0)
+    Texture(SOLID_COLOR, vec3(0), 0, 0),
+    Texture(IMAGE, vec3(1, 0, 0), 0, 0)
 );
 
 Material materials[] = Material[](
-    Material(DIFFUSE_LIGHT, 0, 0), // Emission
+    Material(DIFFUSE_LIGHT, 4, 0), // Emission
     Material(DIFFUSE, 1, 0), // Ground
     Material(DIELECTRIC, 0, 1.5), // Scene object 1
     Material(METAL, 0, 0.0), // Scene object 2
@@ -157,9 +165,64 @@ Sphere spheres[] = Sphere[](
 );
 
 Rect rects[] = Rect[](
-    Rect(-5, 5, 0, 2, -5, 0), // Light 1
-    Rect(-5, 5, 0, 2, 5, 0) // Light 2
+    Rect(XY, -7, 7, 0, 10, 3, 0) // Light 1
 );
+
+#endif
+
+// Cornell's box
+#if 1
+
+Texture textures[] = Texture[](
+    Texture(SOLID_COLOR, vec3(0.65, 0.05, 0.05), 0, 0), // Red
+    Texture(SOLID_COLOR, vec3(0.12, 0.45, 0.15), 0, 0), // Green
+    Texture(SOLID_COLOR, vec3(0.73), 0, 0), // White
+    Texture(SOLID_COLOR, vec3(15), 0, 0), // Light
+    Texture(IMAGE, vec3(0), 0, 0),
+    Texture(IMAGE, vec3(0), 1, 0)
+);
+
+Material materials[] = Material[](
+    Material(DIFFUSE, 0, 0), // Red wall
+    Material(DIFFUSE, 1, 0), // Green wall
+    Material(DIFFUSE, 2, 0), // White wall
+    Material(DIFFUSE_LIGHT, 3, 0) // Light
+);
+
+Sphere spheres[] = Sphere[](
+    Sphere(vec3(150, -1001, 273), 100, 4)
+);
+
+Rect rects[] = Rect[](
+    Rect(YZ, 0, 555, 0, 555, 555, 1),
+    Rect(YZ, 0, 555, 0, 555, 0, 0),
+    Rect(XZ, 100, 455, 100, 455, 554, 3),
+    Rect(XZ, 0, 555, 0, 555, 555, 2),
+    Rect(XZ, 0, 555, 0, 555, 0, 2),
+    Rect(XY, 0, 555, 0, 555, 555, 2),
+
+    // Box 1
+    Rect(XY, 130, 295, 0, 165, 230, 2),
+    Rect(XY, 130, 295, 0, 165, 65, 2),
+
+    Rect(XZ, 130, 295, 65, 230, 165, 2),
+    Rect(XZ, 130, 295, 65, 230, 0, 2),
+
+    Rect(YZ, 0, 165, 65, 230, 295, 2),
+    Rect(YZ, 0, 165, 65, 230, 130, 2),
+
+    // Box 2
+    Rect(XY, 256, 430, 0, 330, 460, 2),
+    Rect(XY, 256, 430, 0, 330, 295, 2),
+
+    Rect(XZ, 265, 430, 295, 460, 330, 2),
+    Rect(XZ, 265, 430, 295, 460, 0, 2),
+
+    Rect(YZ, 0, 330, 295, 460, 430, 2),
+    Rect(YZ, 0, 330, 295, 460, 265, 2)
+);
+
+#endif
 
 void get_sphere_uv(in vec3 p, inout HitRecord rc)
 {
@@ -323,22 +386,58 @@ bool hit_sphere(Sphere sp, Ray r, float tmin, float tmax, out HitRecord rc)
 }
 
 bool hit_rect(in Rect rt, in Ray r, float tmin, float tmax, inout HitRecord rc) {
-    float t = (rt.k - r.o.z) / r.d.z;
-    if(t < tmin || t > tmax) return false;
+    if(rt.p == XY) {
+        float t = (rt.k - r.o.z) / r.d.z;
+        if(t < tmin || t > tmax) return false;
 
-    float x = r.o.x + t * r.d.x;
-    float y = r.o.y + t * r.d.y;
-    if(x < rt.x0 || x > rt.x1 || y < rt.y0 || y > rt.y1) return false;
+        float x = r.o.x + t * r.d.x;
+        float y = r.o.y + t * r.d.y;
+        if(x < rt.x0 || x > rt.x1 || y < rt.y0 || y > rt.y1) return false;
 
-    rc.u = (x - rt.x0) / (rt.x1 - rt.x0);
-    rc.v = (y - rt.y0) / (rt.y1 - rt.y0);
-    rc.t = t;
+        rc.u = (x - rt.x0) / (rt.x1 - rt.x0);
+        rc.v = (y - rt.y0) / (rt.y1 - rt.y0);
+        rc.t = t;
 
-    vec3 n = vec3(0, 0, 1);
-    set_face_normal(rc, r, n);
-    rc.m = rt.m;
-    rc.p = r.o + r.d * t;
-    return true;
+        vec3 n = vec3(0, 0, 1);
+        set_face_normal(rc, r, n);
+        rc.m = rt.m;
+        rc.p = r.o + r.d * t;
+        return true;
+    } else if(rt.p == XZ) {
+        float t = (rt.k - r.o.y) / r.d.y;
+        if(t < tmin || t > tmax) return false;
+
+        float x = r.o.x + t * r.d.x;
+        float z = r.o.z + t * r.d.z;
+        if(x < rt.x0 || x > rt.x1 || z < rt.y0 || z > rt.y1) return false;
+
+        rc.u = (x - rt.x0) / (rt.x1 - rt.x0);
+        rc.v = (z - rt.y0) / (rt.y1 - rt.y0);
+        rc.t = t;
+
+        vec3 n = vec3(0, 1, 0);
+        set_face_normal(rc, r, n);
+        rc.m = rt.m;
+        rc.p = r.o + r.d * t;
+        return true;
+    } else {
+        float t = (rt.k - r.o.x) / r.d.x;
+        if(t < tmin || t > tmax) return false;
+
+        float y = r.o.y + t * r.d.y;
+        float z = r.o.z + t * r.d.z;
+        if(y < rt.x0 || y > rt.x1 || z < rt.y0 || z > rt.y1) return false;
+
+        rc.u = (y - rt.x0) / (rt.x1 - rt.x0);
+        rc.v = (z - rt.y0) / (rt.y1 - rt.y0);
+        rc.t = t;
+
+        vec3 n = vec3(1, 0, 0);
+        set_face_normal(rc, r, n);
+        rc.m = rt.m;
+        rc.p = r.o + r.d * t;
+        return true;
+    }
 }
 
 bool hit_scene(Ray r, out HitRecord rc)
@@ -499,25 +598,24 @@ Ray get_camera_ray(Camera c, vec2 uv)
 void gamma_correct(inout vec4 px, int samples)
 {
     float scale = 1.0 / samples;
-    px.x = clamp(scale * px.x, 0, 1);
-    px.y = clamp(scale * px.y, 0, 1);
-    px.z = clamp(scale * px.z, 0, 1);
+    px.x = sqrt(clamp(scale * px.x, 0, 1));
+    px.y = sqrt(clamp(scale * px.y, 0, 1));
+    px.z = sqrt(clamp(scale * px.z, 0, 1));
 }
 
 void main()
 {
     ivec2 coords = ivec2(gl_GlobalInvocationID.xy);
 
-    vec3 lookfrom = vec3(0, 1, -3);
-    vec3 lookat = vec3(0, 0, 0);
-//    vec3 lookfrom = vec3(sin(utime) * 4, -cos(utime) * 3 + 2, -sin(utime) * 2 - 8);
-//    vec3 lookat = vec3(-cos(utime) * 2, sin(utime) * 3, cos(utime) * 5);
+    vec3 lookfrom = vec3(278, 278, -800);
+    vec3 lookat = vec3(278, 278, 0);
+//    vec3 lookat = vec3(150, 101, 273);
     vec3 background = vec3(0);
 
     Camera cam = new_camera(
         lookfrom, lookat,
         vec3(0, 1, 0),    
-        90, uwidth / uheight
+        40, uwidth / uheight
     );
 
     g_seed = float(base_hash(floatBitsToUint(vec2(coords))))/float(0xffffffffU)+utime;
@@ -534,7 +632,7 @@ void main()
     vec4 final = vec4(pixel, 1);
     gamma_correct(final, SAMPLES);
 
-    final = final * 0.005 + imageLoad(framebuffer, coords) * 0.995;
+    final = final * 0.01 + imageLoad(framebuffer, coords) * 0.99;
 
     imageStore(framebuffer, coords, final);
 }

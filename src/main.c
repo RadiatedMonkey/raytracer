@@ -181,7 +181,7 @@ int main(void)
     screenTexture = createScreenTexture(windowWidth, windowHeight);
     struct buffers bufs = createBuffers();
 
-    glfwSwapInterval(1); // Enable vsync
+//    glfwSwapInterval(1); // Enable vsync
     while(!glfwWindowShouldClose(window)) {
         if(!windowInFocus) {
             glfwPollEvents();
