@@ -86,6 +86,7 @@ struct Rect
     uint p; // The plane this rectangle is put on (XY, XZ or YZ)
     float x0, x1, y0, y1, k;
     uint m;
+    float r; // Rotation
 };
 
 struct Camera
@@ -133,8 +134,8 @@ Sphere spheres[] = Sphere[](
 );
 
 Rect rects[] = Rect[](
-    Rect(XY, -7, 7, -20, 20, 3, 2),
-    Rect(XY, -7, 7, -20, 20, -11, 4)
+    Rect(XY, -7, 7, -20, 20, 3, 2, 15),
+    Rect(XY, -7, 7, -20, 20, -11, 4, -18)
 );
 
 #endif
@@ -178,48 +179,49 @@ Texture textures[] = Texture[](
     Texture(SOLID_COLOR, vec3(0.12, 0.45, 0.15), 0, 0), // Green
     Texture(SOLID_COLOR, vec3(0.73), 0, 0), // White
     Texture(SOLID_COLOR, vec3(15), 0, 0), // Light
-    Texture(IMAGE, vec3(0), 0, 0),
-    Texture(IMAGE, vec3(0), 1, 0)
+    Texture(IMAGE, vec3(0), 0, 0)
 );
 
 Material materials[] = Material[](
     Material(DIFFUSE, 0, 0), // Red wall
     Material(DIFFUSE, 1, 0), // Green wall
     Material(DIFFUSE, 2, 0), // White wall
-    Material(DIFFUSE_LIGHT, 3, 0) // Light
+    Material(DIFFUSE_LIGHT, 3, 0), // Light
+    Material(DIFFUSE, 4, 0),
+    Material(DIELECTRIC, 2, 1.5)
 );
 
 Sphere spheres[] = Sphere[](
-    Sphere(vec3(150, -1001, 273), 100, 4)
+    Sphere(vec3(100, -400, 400), 100, 5)
 );
 
 Rect rects[] = Rect[](
-    Rect(YZ, 0, 555, 0, 555, 555, 1),
-    Rect(YZ, 0, 555, 0, 555, 0, 0),
-    Rect(XZ, 100, 455, 100, 455, 554, 3),
-    Rect(XZ, 0, 555, 0, 555, 555, 2),
-    Rect(XZ, 0, 555, 0, 555, 0, 2),
-    Rect(XY, 0, 555, 0, 555, 555, 2),
+    Rect(YZ, 0, 555, 0, 555, 555, 1, 0),
+    Rect(YZ, 0, 555, 0, 555, 0, 0, 0),
+    Rect(XZ, 100, 455, 100, 455, 554, 3, 0),
+    Rect(XZ, 0, 555, 0, 555, 555, 2, 0),
+    Rect(XZ, 0, 555, 0, 555, 0, 2, 0),
+    Rect(XY, 0, 555, 0, 555, 555, 2, 0),
 
     // Box 1
-    Rect(XY, 130, 295, 0, 165, 230, 2),
-    Rect(XY, 130, 295, 0, 165, 65, 2),
+    Rect(XY, 130, 295, 0, 165, 230, 2, 0),
+    Rect(XY, 130, 295, 0, 165, 65, 2, 0),
 
-    Rect(XZ, 130, 295, 65, 230, 165, 2),
-    Rect(XZ, 130, 295, 65, 230, 0, 2),
+    Rect(XZ, 130, 295, 65, 230, 165, 2, 0),
+    Rect(XZ, 130, 295, 65, 230, 0, 2, 0),
 
-    Rect(YZ, 0, 165, 65, 230, 295, 2),
-    Rect(YZ, 0, 165, 65, 230, 130, 2),
+    Rect(YZ, 0, 165, 65, 230, 295, 2, 0),
+    Rect(YZ, 0, 165, 65, 230, 130, 2, 0),
 
     // Box 2
-    Rect(XY, 256, 430, 0, 330, 460, 2),
-    Rect(XY, 256, 430, 0, 330, 295, 2),
+    Rect(XY, 256, 430, 0, 330, 460, 2, 0),
+    Rect(XY, 256, 430, 0, 330, 295, 2, 0),
 
-    Rect(XZ, 265, 430, 295, 460, 330, 2),
-    Rect(XZ, 265, 430, 295, 460, 0, 2),
+    Rect(XZ, 265, 430, 295, 460, 330, 2, 0),
+    Rect(XZ, 265, 430, 295, 460, 0, 2, 0),
 
-    Rect(YZ, 0, 330, 295, 460, 430, 2),
-    Rect(YZ, 0, 330, 295, 460, 265, 2)
+    Rect(YZ, 0, 330, 295, 460, 430, 2, 0),
+    Rect(YZ, 0, 330, 295, 460, 265, 2, 0)
 );
 
 #endif
