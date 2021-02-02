@@ -17,6 +17,7 @@ struct buffers {
 static GLint timeloc;
 static GLint widthloc;
 static GLint heightloc;
+static int frame = 0;
 static GLuint screenTexture;
 static GLuint texture1;
 static GLuint texture2;
@@ -132,17 +133,19 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
 
         glDeleteProgram(computeprogram);
         createComputeProgram();
+        frame = 0;
     }
 }
 
 int main(void)
 {
-    GLFWwindow* window = windowCreate(800, 600, "Window", true);
+    GLFWwindow* window = windowCreate(500, 500, "Window", true);
 
     glfwSetFramebufferSizeCallback(window, resizeCallback);
     glfwSetWindowFocusCallback(window, focusCallback);
     glfwSetKeyCallback(window, keyCallback);
     glfwGetWindowSize(window, &windowWidth, &windowHeight);
+    glfwSwapInterval(1);
 
     createComputeProgram();
     texture1 = uploadTexture("../../textures/texture1.jpg", GL_TEXTURE1);
@@ -181,7 +184,7 @@ int main(void)
     screenTexture = createScreenTexture(windowWidth, windowHeight);
     struct buffers bufs = createBuffers();
 
-//    glfwSwapInterval(1); // Enable vsync
+    GLuint frameloc = glGetUniformLocation(computeprogram, "uframe");
     while(!glfwWindowShouldClose(window)) {
         if(!windowInFocus) {
             glfwPollEvents();
@@ -192,6 +195,7 @@ int main(void)
         {
             glUseProgram(computeprogram);
             glUniform1f(timeloc, (float)glfwGetTime());
+            glUniform1i(frameloc, frame);
             glDispatchCompute((GLuint)windowWidth, (GLuint)windowHeight, 1);
         }
 
@@ -208,6 +212,7 @@ int main(void)
 
         glfwSwapBuffers(window);
         glfwPollEvents();
+        frame++;
     }
 
     glDeleteVertexArrays(1, &bufs.vao);

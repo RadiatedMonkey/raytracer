@@ -15,7 +15,7 @@ add_executable(
     include/window.h
     include/shader.h
     include/stb_image.h
-)
+        src/scene.c include/scene.h)
 
 add_subdirectory(lib/glfw)
 add_subdirectory(lib/glad)
